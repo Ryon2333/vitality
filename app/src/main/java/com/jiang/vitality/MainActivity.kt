@@ -1,0 +1,462 @@
+package com.jiang.vitality
+
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
+import com.jiang.vitality.data.Snapshot
+import com.jiang.vitality.data.VitalityStore
+import com.jiang.vitality.reminder.AlarmScheduler
+import com.jiang.vitality.ui.*
+import com.jiang.vitality.ui.navigation.JiangLiquidNavigationBar
+import com.jiang.vitality.widget.VitalityWidget
+import dev.chrisbanes.haze.rememberHazeState
+import kotlinx.coroutines.delay
+import java.io.File
+
+class MainActivity : ComponentActivity() {
+    private val store by lazy { VitalityStore(this) }
+    private var state by mutableStateOf<Snapshot?>(null)
+    private var checkin by mutableStateOf(false)
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        state = store.snapshot()
+        checkin = intent?.action == "checkin" && !state!!.locked
+
+        if (
+            Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(
+                arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                1
+            )
+        }
+
+        setContent { AppScreen() }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        state = store.snapshot()
+        AlarmScheduler.scheduleAll(this)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        checkin = intent.action == "checkin" && !store.snapshot().locked
+    }
+
+    private fun refresh() {
+        state = store.snapshot()
+        VitalityWidget.refresh(this)
+    }
+
+    @Composable
+    private fun AppScreen() {
+        val snapshot = state ?: return
+        var tab by remember { mutableIntStateOf(0) }
+        var navigationCollapsed by remember { mutableStateOf(false) }
+        var showRecoveryCelebration by remember { mutableStateOf(false) }
+        var workUnlockStep by remember { mutableIntStateOf(0) }
+        var workUnlockPhrase by remember { mutableStateOf("") }
+        val hazeState = rememberHazeState()
+        val bubbleSounds = rememberBubbleSoundPlayer()
+
+        LaunchedEffect(Unit) {
+            while (true) {
+                delay(60_000)
+                state = store.snapshot()
+                VitalityWidget.refresh(this@MainActivity)
+            }
+        }
+
+        VitalityTheme(recoveryMode = snapshot.locked) {
+            CompositionLocalProvider(LocalGlassHazeState provides hazeState) {
+                Box(Modifier.fillMaxSize()) {
+                DynamicGeometryBackground(
+                    vitality = snapshot.value,
+                    recoveryMode = snapshot.locked,
+                    modifier = Modifier.matchParentSize()
+                )
+                GlassBackdropSource(
+                    recoveryMode = snapshot.locked,
+                    modifier = Modifier.matchParentSize()
+                )
+                Scaffold(
+                    containerColor = Color.Transparent
+                ) { padding ->
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .padding(padding)
+                    ) {
+                        when (tab) {
+                            0 -> HomeScreen(
+                                snapshot,
+                                onRecord = { checkin = true },
+                                onRecovery = {
+                                    if (snapshot.locked) {
+                                        workUnlockPhrase = ""
+                                        workUnlockStep = 1
+                                    } else {
+                                        if (store.beginRecovery()) {
+                                            showRecoveryCelebration = true
+                                            AlarmScheduler.scheduleAll(this@MainActivity)
+                                            refresh()
+                                        }
+                                    }
+                                },
+                                onPlayBubbleSound = { callItADay ->
+                                    if (callItADay) bubbleSounds.playCallItADay()
+                                    else bubbleSounds.playRandomRestBubble()
+                                },
+                                onCollapse = { navigationCollapsed = true }
+                            )
+                            1 -> RestScreen(
+                                snapshot.rests,
+                                onSave = {
+                                    store.saveRests(it)
+                                    refresh()
+                                }
+                            )
+                            2 -> HistoryScreen(snapshot)
+                            else -> SettingsScreen(
+                                snapshot,
+                                onReminders = { updated ->
+                                    val previous = snapshot.reminders
+                                    store.saveReminders(updated)
+                                    AlarmScheduler.scheduleAll(
+                                        this@MainActivity,
+                                        previous
+                                    )
+                                    refresh()
+                                },
+                                onBaseline = {
+                                    store.setBaseline(it)
+                                    refresh()
+                                },
+                                onExportData = { uri ->
+                                    runCatching {
+                                        contentResolver.openOutputStream(uri)?.bufferedWriter()?.use {
+                                            writer -> writer.write(store.exportData())
+                                        } ?: error("无法创建备份文件")
+                                    }.isSuccess
+                                },
+                                onImportData = { uri ->
+                                    runCatching {
+                                        val raw = contentResolver.openInputStream(uri)?.bufferedReader()?.use {
+                                            it.readText()
+                                        } ?: error("无法读取备份文件")
+                                        val summary = store.importData(raw)
+                                        refresh()
+                                        AlarmScheduler.scheduleAll(this@MainActivity)
+                                        "已导入 ${summary.readings} 条记录和 ${summary.photos} 张照片"
+                                    }.getOrElse { "导入失败：${it.message ?: "文件内容无效"}" }
+                                }
+                            )
+                        }
+                    }
+                }
+                JiangLiquidNavigationBar(
+                    selectedIndex = tab,
+                    onSelected = {
+                        tab = it
+                        navigationCollapsed = false
+                    },
+                    recoveryMode = snapshot.locked,
+                    collapsed = navigationCollapsed,
+                    onExpand = { navigationCollapsed = false },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 18.dp, vertical = 14.dp)
+                )
+                if (showRecoveryCelebration) {
+                    RecoveryCelebrationOverlay(
+                        onFinished = { showRecoveryCelebration = false },
+                        onPlaySound = bubbleSounds::playCallItADay,
+                        modifier = Modifier.matchParentSize()
+                    )
+                }
+            }
+
+            if (checkin && !snapshot.locked) {
+                CheckinDialog(
+                    snapshot.value,
+                    onDismiss = { checkin = false },
+                    onSave = { value, note, photoPaths ->
+                        store.record(value, note, photoPaths)
+                        checkin = false
+                        refresh()
+                    },
+                    createPhotoFile = store::createPhotoFile,
+                    finalizePhoto = store::finalizePhoto,
+                    importPhoto = store::importPhoto,
+                    deletePhoto = store::deletePhoto
+                )
+            }
+
+            WorkModeUnlockDialogs(
+                step = workUnlockStep,
+                phrase = workUnlockPhrase,
+                onPhraseChange = { workUnlockPhrase = it.take(30) },
+                onStepChange = { workUnlockStep = it },
+                onDismiss = {
+                    workUnlockStep = 0
+                    workUnlockPhrase = ""
+                },
+                onUnlock = {
+                    if (
+                        workUnlockPhrase == WorkModeUnlockPhrase &&
+                        store.endRecoveryEarly()
+                    ) {
+                        workUnlockStep = 0
+                        workUnlockPhrase = ""
+                        AlarmScheduler.scheduleAll(this@MainActivity)
+                        refresh()
+                    }
+                }
+            )
+            }
+        }
+    }
+}
+
+private const val WorkModeUnlockPhrase = "状态是第一优先级"
+
+@Composable
+private fun WorkModeUnlockDialogs(
+    step: Int,
+    phrase: String,
+    onPhraseChange: (String) -> Unit,
+    onStepChange: (Int) -> Unit,
+    onDismiss: () -> Unit,
+    onUnlock: () -> Unit
+) {
+    when (step) {
+        1 -> AlertDialog(
+            onDismissRequest = onDismiss,
+            shape = GlassDialogShape,
+            containerColor = GlassDialogColor,
+            tonalElevation = 0.dp,
+            title = { Text("休息是前进的一部分") },
+            text = { Text("已经进入休息状态。只有确实无法推迟的事情，才值得现在重新开始工作。") },
+            confirmButton = {
+                TextButton(onClick = { onStepChange(2) }) {
+                    Text("但是我现在有急事加班")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onDismiss) { Text("继续休息") }
+            }
+        )
+        2 -> AlertDialog(
+            onDismissRequest = onDismiss,
+            shape = GlassDialogShape,
+            containerColor = GlassDialogColor,
+            tonalElevation = 0.dp,
+            title = { Text("确定要继续？") },
+            text = { Text("切回工作状态后，将停止本次自动恢复并重新开放状态记录。") },
+            confirmButton = {
+                TextButton(onClick = { onStepChange(3) }) { Text("确定") }
+            },
+            dismissButton = {
+                TextButton(onClick = onDismiss) { Text("返回休息") }
+            }
+        )
+        3 -> AlertDialog(
+            onDismissRequest = onDismiss,
+            shape = GlassDialogShape,
+            containerColor = GlassDialogColor,
+            tonalElevation = 0.dp,
+            title = { Text("务必维持好自己的状态") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("输入“$WorkModeUnlockPhrase”后，才能解除 Call it a day 模式。")
+                    OutlinedTextField(
+                        value = phrase,
+                        onValueChange = onPhraseChange,
+                        singleLine = true,
+                        label = { Text("验证短语") },
+                        isError = phrase.isNotEmpty() && phrase != WorkModeUnlockPhrase,
+                        shape = GlassControlShape,
+                        colors = glassTextFieldColors(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = onUnlock,
+                    enabled = phrase == WorkModeUnlockPhrase
+                ) {
+                    Text("解除并进入工作状态")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onDismiss) { Text("继续休息") }
+            }
+        )
+    }
+}
+
+@Composable
+private fun CheckinDialog(
+    initial: Int,
+    onDismiss: () -> Unit,
+    onSave: (Int, String, List<String>) -> Unit,
+    createPhotoFile: () -> File,
+    finalizePhoto: (String) -> String?,
+    importPhoto: (android.net.Uri) -> String?,
+    deletePhoto: (String) -> Unit
+) {
+    val context = LocalContext.current
+    var value by remember(initial) { mutableIntStateOf(initial) }
+    var note by remember { mutableStateOf("") }
+    var photoPaths by remember { mutableStateOf(listOf<String>()) }
+    var pendingCapturePath by remember { mutableStateOf("") }
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { saved ->
+        val captured = pendingCapturePath
+        pendingCapturePath = ""
+        if (saved) {
+            finalizePhoto(captured)?.let { finalized -> photoPaths = photoPaths + finalized }
+        } else {
+            deletePhoto(captured)
+        }
+    }
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+        if (uris.isNotEmpty()) {
+            photoPaths = photoPaths + uris.mapNotNull(importPhoto)
+        }
+    }
+    val dismissWithCleanup = {
+        photoPaths.forEach { deletePhoto(it) }
+        if (pendingCapturePath.isNotBlank()) deletePhoto(pendingCapturePath)
+        onDismiss()
+    }
+
+    AlertDialog(
+        onDismissRequest = dismissWithCleanup,
+        shape = GlassDialogShape,
+        containerColor = GlassDialogColor,
+        tonalElevation = 0.dp,
+        title = { Text("现在感觉怎么样？") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "$value / 100",
+                    color = Blue,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                GlassVitalitySlider(
+                    value = value,
+                    onValueChange = { value = it },
+                    valueRange = 0..100,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { note = it.take(1000) },
+                    label = { Text("这一刻，你有什么感受？") },
+                    shape = GlassControlShape,
+                    colors = glassTextFieldColors(),
+                    minLines = 3,
+                    maxLines = 6
+                )
+                if (photoPaths.isNotEmpty()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        photoPaths.forEach { path ->
+                            val bitmap = remember(path) {
+                                BitmapFactory.decodeFile(path)?.asImageBitmap()
+                            }
+                            bitmap?.let {
+                                Box {
+                                    Image(
+                                        bitmap = it,
+                                        contentDescription = "随手拍预览",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(150.dp)
+                                            .clip(RoundedCornerShape(18.dp))
+                                    )
+                                    TextButton(
+                                        onClick = { deletePhoto(path); photoPaths = photoPaths - path },
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .background(Color.Black.copy(alpha = .38f), RoundedCornerShape(12.dp))
+                                            .padding(horizontal = 8.dp)
+                                    ) { Text("移除", color = Color.White) }
+                                }
+                            }
+                        }
+                    }
+                }
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                    GlassOutlinedButton(
+                        onClick = {
+                            runCatching {
+                                val target = createPhotoFile()
+                                pendingCapturePath = target.absolutePath
+                                cameraLauncher.launch(
+                                    FileProvider.getUriForFile(
+                                        context,
+                                        "${context.packageName}.fileprovider",
+                                        target
+                                    )
+                                )
+                            }
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) { Text("拍一张") }
+                    GlassOutlinedButton(
+                        onClick = { galleryLauncher.launch("image/*") },
+                        modifier = Modifier.weight(1f)
+                    ) { Text("从相册多选") }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(value, note, photoPaths) }) {
+                Text("保存")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = dismissWithCleanup) {
+                Text("稍后")
+            }
+        }
+    )
+}
