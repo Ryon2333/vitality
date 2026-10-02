@@ -36,7 +36,7 @@ fun PhotoViewer(imagePath: String, onDismiss: () -> Unit) {
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Box(
-            Modifier.fillMaxSize().background(Color.Black.copy(alpha = .94f)),
+            Modifier.fillMaxSize().background(Color.Black.copy(alpha = .68f)),
             contentAlignment = Alignment.Center
         ) {
             var scale by remember { mutableFloatStateOf(1f) }
