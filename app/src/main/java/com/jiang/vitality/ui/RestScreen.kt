@@ -11,10 +11,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -49,8 +47,11 @@ fun RestScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(17.dp)
     ) {
-        Text("休息方式", color = Ink, fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth())
-        Text("不知道怎么放松时，让气泡帮你挑一个。", color = Muted, fontSize = 14.sp, modifier = Modifier.fillMaxWidth())
+        GlassPageHeader(
+            title = "休息方式",
+            subtitle = "不知道怎么放松时，让气泡帮你挑一个。",
+            modifier = Modifier.fillMaxWidth()
+        )
         GlassCard(Modifier.fillMaxWidth()) {
             RestBubblePicker(
                 rests = rests,
@@ -63,7 +64,10 @@ fun RestScreen(
                 rests.forEach { name ->
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text(name, Modifier.weight(1f), color = Ink)
-                        TextButton(onClick = { onSave(rests.toMutableList().apply { remove(name) }) }) { Text("删除") }
+                        GlassActionButton(
+                            text = "删除",
+                            onClick = { onSave(rests.toMutableList().apply { remove(name) }) }
+                        )
                     }
                 }
                 GlassOutlinedButton(onClick = { showAdd = true }, modifier = Modifier.fillMaxWidth()) { Text("＋ 添加休息方式") }
@@ -96,20 +100,22 @@ fun RestScreen(
                                     Text(if (playing) "播放中" else "已暂停", color = Muted, fontSize = 11.sp)
                                 }
                             }
-                            TextButton(onClick = { onToggleMusic(name) }) { Text(if (playing) "暂停" else "播放") }
-                            TextButton(onClick = { onDeleteMusic(name) }) { Text("删除") }
+                            GlassActionButton(
+                                text = if (playing) "暂停" else "播放",
+                                onClick = { onToggleMusic(name) }
+                            )
+                            GlassActionButton(
+                                text = "删除",
+                                onClick = { onDeleteMusic(name) }
+                            )
                         }
                     }
                 }
             }
         }
     }
-
-    if (showAdd) AlertDialog(
+    if (showAdd) GlassDialog(
         onDismissRequest = { showAdd = false },
-        shape = GlassDialogShape,
-        containerColor = GlassDialogColor,
-        tonalElevation = 0.dp,
         title = { Text("添加休息方式") },
         text = {
             OutlinedTextField(
@@ -120,14 +126,14 @@ fun RestScreen(
                 colors = glassTextFieldColors()
             )
         },
-        confirmButton = {
-            TextButton(onClick = {
+        actions = {
+            GlassActionButton(text = "取消", onClick = { showAdd = false })
+            GlassActionButton(text = "保存", onClick = {
                 val item = newItem.trim()
                 if (item.isNotEmpty()) onSave(rests + item)
                 newItem = ""
                 showAdd = false
-            }) { Text("保存") }
-        },
-        dismissButton = { TextButton(onClick = { showAdd = false }) { Text("取消") } }
+            })
+        }
     )
 }

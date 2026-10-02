@@ -1,31 +1,36 @@
 package com.jiang.vitality.ui.navigation
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.layout
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.jiang.vitality.ui.rememberFlowingColorPhase
-import kotlin.math.roundToInt
+import androidx.compose.ui.unit.sp
+import com.jiang.vitality.ui.Blue
+import com.jiang.vitality.ui.LocalVitalityColors
+import com.jiang.vitality.ui.RecoveryCoral
+import com.jiang.vitality.ui.backdrop.LiquidBottomTab
+import com.jiang.vitality.ui.backdrop.LiquidBottomTabs
+import com.jiang.vitality.ui.backdrop.LiquidButton
+import com.jiang.vitality.ui.backdrop.LocalBackdrop
+import com.kyant.backdrop.backdrops.emptyBackdrop
 
 /**
- * 液态玻璃导航栏入口。完整导航栏与右下角小气泡是**同一个**玻璃物体：
- * 通过一个 [Animatable] 驱动的 morph 进度，连续地改变尺寸、圆角与内容透明度，
- * 让「气泡 → 拉伸 → 导航栏」的形变像一滴液体展开，而不是两个组件切换。
+ * 苹果液态玻璃标准底部导航栏：
+ * 采用 Kyant0 AndroidLiquidGlass 标准 `LiquidBottomTabs` 架构：
+ * 1. 纯净背景层：Capsule 胶囊 + 动态背景模糊 + 24px 透镜折射；
+ * 2. 独立活动透镜：结合 `DampedDragAnimation` 速度拉伸、7 波段真光学色散透镜与内壁法线高光；
+ * 3. 收起时平滑 Morph 变成单触点液态气泡。
  */
 @Composable
 fun JiangLiquidNavigationBar(
@@ -36,82 +41,81 @@ fun JiangLiquidNavigationBar(
     onExpand: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Box(modifier = modifier.height(88.dp)) {
+    val backdrop = LocalBackdrop.current ?: emptyBackdrop()
+    val accentColor = if (recoveryMode) RecoveryCoral else Blue
+    val palette = LocalVitalityColors.current
+
+    Box(modifier = modifier.height(64.dp)) {
         val morph = remember { Animatable(if (collapsed) 0f else 1f) }
         LaunchedEffect(collapsed) {
             morph.animateTo(if (collapsed) 0f else 1f, navigationMorphSpec)
         }
-        val sheenPhase = rememberFlowingColorPhase(periodSeconds = 7f)
-        val density = LocalDensity.current
+        val p = morph.value
 
-        val bubbleSize = 62.dp
-        val expandedHeight = 88.dp
-        val shape = remember { RoundedCornerShape(34.dp) }
-        val cornerPx = with(density) { 34.dp.toPx() }
-
-        LiquidGlassShell(
-            shape = shape,
-            cornerRadiusPx = cornerPx,
-            sheenPhase = { sheenPhase.value },
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .layout { measurable, constraints ->
-                    // Read the animation in measurement, not composition. Only this glass
-                    // object is remeasured while morphing; its content is not recomposed.
-                    val progress = morph.value.coerceIn(0f, 1f)
-                    val bubblePx = bubbleSize.roundToPx()
-                    val expandedHeightPx = expandedHeight.roundToPx()
-                    val widthPx = (bubblePx + (constraints.maxWidth - bubblePx) * progress)
-                        .roundToInt()
-                        .coerceIn(bubblePx, constraints.maxWidth)
-                    val heightPx = (bubblePx + (expandedHeightPx - bubblePx) * progress)
-                        .roundToInt()
-                    val placeable = measurable.measure(Constraints.fixed(widthPx, heightPx))
-                    layout(widthPx, heightPx) { placeable.placeRelative(0, 0) }
-                }
-        ) {
-            // 导航栏内容（随 morph 进度淡入）。
+        if (p > 0.05f) {
             Box(
                 Modifier
-                    .matchParentSize()
-                    .graphicsLayer { alpha = morph.value }
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .graphicsLayer {
+                        transformOrigin = TransformOrigin(1f, .5f)
+                        alpha = ((p - .03f) / .82f).coerceIn(0f, 1f)
+                        scaleX = .14f + .86f * p
+                        scaleY = .82f + .18f * p
+                        translationX = (1f - p) * size.width * .43f
+                    }
             ) {
-                LiquidLightSource(
-                    selectedIndex = selectedIndex,
-                    itemCount = navigationDestinations.size,
-                    recoveryMode = recoveryMode,
-                    modifier = Modifier.matchParentSize()
-                )
-                Row(
-                    Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 8.dp, vertical = 7.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                LiquidBottomTabs(
+                    selectedTabIndex = { selectedIndex },
+                    onTabSelected = onSelected,
+                    backdrop = backdrop,
+                    tabsCount = navigationDestinations.size,
+                    accentColor = accentColor,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     navigationDestinations.forEachIndexed { index, destination ->
-                        NavigationItem(
-                            destination = destination,
-                            selected = selectedIndex == index,
-                            onClick = { onSelected(index) },
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight()
-                        )
+                        val isSelected = selectedIndex == index
+                        val itemColor = if (isSelected) accentColor else palette.ink.copy(alpha = 0.62f)
+                        LiquidBottomTab(onClick = { onSelected(index) }) {
+                            NavigationGlyphView(
+                                glyph = destination.glyph,
+                                color = itemColor,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Text(
+                                text = destination.label,
+                                fontSize = 11.sp,
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                                color = itemColor
+                            )
+                        }
                     }
                 }
             }
-            // 气泡内容（随 morph 进度淡出）。点击只在气泡态生效：
-            // 展开后不再附加 clickable，避免透明的气泡层覆盖在导航项上方拦截点击。
+        }
+
+        if (p < 0.95f) {
             Box(
                 Modifier
-                    .matchParentSize()
-                    .graphicsLayer { alpha = 1f - morph.value }
-                    .then(if (collapsed) Modifier.clickable(onClick = onExpand) else Modifier),
-                contentAlignment = Alignment.Center
+                    .align(Alignment.BottomEnd)
+                    .graphicsLayer {
+                        val bubbleProgress = 1f - p
+                        alpha = ((bubbleProgress - .02f) / .72f).coerceIn(0f, 1f)
+                        val liquidScale = .72f + .28f * bubbleProgress
+                        scaleX = liquidScale + p * .30f
+                        scaleY = liquidScale - p * .08f
+                        translationX = -p * 10.dp.toPx()
+                    }
             ) {
-                LiquidBubble(
-                    glyph = navigationDestinations[selectedIndex.coerceIn(0, navigationDestinations.lastIndex)].glyph
-                )
+                LiquidButton(
+                    onClick = onExpand,
+                    backdrop = backdrop,
+                    modifier = Modifier.size(56.dp)
+                ) {
+                    LiquidBubble(
+                        glyph = navigationDestinations[selectedIndex.coerceIn(0, navigationDestinations.lastIndex)].glyph
+                    )
+                }
             }
         }
     }

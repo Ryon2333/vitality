@@ -1,5 +1,6 @@
 package com.jiang.vitality.ui
 
+import android.os.Build
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.spring
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -39,6 +41,15 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import com.jiang.vitality.ui.backdrop.LocalBackdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.effects.vibrancy
+import com.kyant.backdrop.highlight.Highlight
+import com.kyant.backdrop.highlight.HighlightStyle
+import com.kyant.backdrop.shadow.InnerShadow
+import com.kyant.backdrop.shadow.Shadow
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -302,7 +313,50 @@ private fun BubbleItem(
     popProgress: Float,
     modifier: Modifier = Modifier
 ) {
-    Box(modifier.size(size), contentAlignment = Alignment.Center) {
+    val backdrop = LocalBackdrop.current
+    val usesBackdrop = backdrop != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+    val glassModifier = if (usesBackdrop) {
+        modifier
+            .size(size)
+            .drawBackdrop(
+                backdrop = backdrop,
+                shape = { RoundedCornerShape(50) },
+                effects = {
+                    vibrancy()
+                    blur(2.dp.toPx())
+                    lens(
+                        refractionHeight = 14.dp.toPx(),
+                        refractionAmount = 24.dp.toPx(),
+                        depthEffect = true,
+                        chromaticAberration = true
+                    )
+                },
+                highlight = {
+                    Highlight.Default.copy(
+                        width = 1.1.dp,
+                        style = HighlightStyle.Default(
+                            color = Color.White.copy(alpha = .92f),
+                            angle = 42f,
+                            falloff = 1.15f
+                        )
+                    )
+                },
+                shadow = {
+                    Shadow(radius = 7.dp, color = tint.copy(alpha = .10f))
+                },
+                innerShadow = {
+                    InnerShadow(radius = 5.dp, color = Color.White.copy(alpha = .30f))
+                },
+                onDrawSurface = {
+                    drawRect(Color.White.copy(alpha = .035f * (1f - popProgress)))
+                    drawRect(tint.copy(alpha = .045f * (1f - popProgress)))
+                }
+            )
+    } else {
+        modifier.size(size)
+    }
+
+    Box(glassModifier, contentAlignment = Alignment.Center) {
         Canvas(Modifier.matchParentSize()) {
             val r = this.size.minDimension / 2f
             val c = center
@@ -319,25 +373,26 @@ private fun BubbleItem(
                 center = c
             )
 
-            // Translucent glass body with off-centre highlight.
-            drawCircle(
-                brush = Brush.radialGradient(
-                    listOf(
-                        Color.White.copy(alpha = .50f * bodyAlpha),
-                        Color.White.copy(alpha = .18f * bodyAlpha),
-                        tint.copy(alpha = .16f * bodyAlpha),
-                        tint.copy(alpha = .30f * bodyAlpha)
+            if (!usesBackdrop) {
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        listOf(
+                            Color.White.copy(alpha = .26f * bodyAlpha),
+                            Color.White.copy(alpha = .08f * bodyAlpha),
+                            tint.copy(alpha = .08f * bodyAlpha),
+                            tint.copy(alpha = .16f * bodyAlpha)
+                        ),
+                        center = c - Offset(r * .40f, r * .40f),
+                        radius = r * 1.8f
                     ),
-                    center = c - Offset(r * .40f, r * .40f),
-                    radius = r * 1.8f
-                ),
-                radius = r,
-                center = c
-            )
+                    radius = r,
+                    center = c
+                )
+            }
 
             // Bright soap-bubble rim.
             drawCircle(
-                color = Color.White.copy(alpha = .72f * bodyAlpha),
+                color = Color.White.copy(alpha = (if (usesBackdrop) .42f else .62f) * bodyAlpha),
                 radius = r,
                 center = c,
                 style = Stroke(width = 1.4.dp.toPx())
@@ -345,7 +400,7 @@ private fun BubbleItem(
 
             // Specular highlight dot.
             drawCircle(
-                color = Color.White.copy(alpha = .95f * bodyAlpha),
+                color = Color.White.copy(alpha = .88f * bodyAlpha),
                 radius = r * .15f,
                 center = c - Offset(r * .38f, r * .42f)
             )

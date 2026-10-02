@@ -33,9 +33,13 @@ import com.jiang.vitality.data.Snapshot
 import com.jiang.vitality.data.VitalityStore
 import com.jiang.vitality.reminder.AlarmScheduler
 import com.jiang.vitality.ui.*
+import com.jiang.vitality.ui.backdrop.LocalBackdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.jiang.vitality.ui.navigation.JiangLiquidNavigationBar
 import com.jiang.vitality.widget.VitalityWidget
 import dev.chrisbanes.haze.rememberHazeState
+import dev.chrisbanes.haze.hazeSource
 import kotlinx.coroutines.delay
 import java.io.File
 
@@ -90,6 +94,7 @@ class MainActivity : ComponentActivity() {
         var workUnlockStep by remember { mutableIntStateOf(0) }
         var workUnlockPhrase by remember { mutableStateOf("") }
         val hazeState = rememberHazeState()
+        val wallpaperBackdrop = rememberLayerBackdrop()
         val bubbleSounds = rememberBubbleSoundPlayer()
         val context = LocalContext.current
         val meditationPlayer = remember { MeditationPlayer(context) }
@@ -106,20 +111,31 @@ class MainActivity : ComponentActivity() {
         }
 
         VitalityTheme(recoveryMode = snapshot.locked) {
-            CompositionLocalProvider(LocalGlassHazeState provides hazeState) {
+            CompositionLocalProvider(
+                LocalGlassHazeState provides hazeState,
+                LocalBackdrop provides wallpaperBackdrop
+            ) {
                 Box(Modifier.fillMaxSize()) {
-                DynamicGeometryBackground(
-                    vitality = snapshot.value,
-                    recoveryMode = snapshot.locked,
-                    modifier = Modifier.matchParentSize()
-                )
-                GlassBackdropSource(
-                    recoveryMode = snapshot.locked,
-                    modifier = Modifier.matchParentSize()
-                )
-                Scaffold(
-                    containerColor = Color.Transparent
-                ) { padding ->
+                    Box(
+                        Modifier
+                            .matchParentSize()
+                            .layerBackdrop(wallpaperBackdrop)
+                            .hazeSource(hazeState)
+                            .background(LocalVitalityColors.current.background)
+                    ) {
+                        DynamicGeometryBackground(
+                            vitality = snapshot.value,
+                            recoveryMode = snapshot.locked,
+                            modifier = Modifier.matchParentSize()
+                        )
+                        GlassBackdropSource(
+                            recoveryMode = snapshot.locked,
+                            modifier = Modifier.matchParentSize()
+                        )
+                    }
+                    Scaffold(
+                        containerColor = Color.Transparent
+                    ) { padding ->
                     Box(
                         Modifier
                             .fillMaxSize()
@@ -288,41 +304,26 @@ private fun WorkModeUnlockDialogs(
     onUnlock: () -> Unit
 ) {
     when (step) {
-        1 -> AlertDialog(
+        1 -> GlassDialog(
             onDismissRequest = onDismiss,
-            shape = GlassDialogShape,
-            containerColor = GlassDialogColor,
-            tonalElevation = 0.dp,
             title = { Text("休息是前进的一部分") },
             text = { Text("已经进入休息状态。只有确实无法推迟的事情，才值得现在重新开始工作。") },
-            confirmButton = {
-                TextButton(onClick = { onStepChange(2) }) {
-                    Text("但是我现在有急事加班")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = onDismiss) { Text("继续休息") }
+            actions = {
+                GlassActionButton(text = "继续休息", onClick = onDismiss)
+                GlassActionButton(text = "我现在有急事", onClick = { onStepChange(2) })
             }
         )
-        2 -> AlertDialog(
+        2 -> GlassDialog(
             onDismissRequest = onDismiss,
-            shape = GlassDialogShape,
-            containerColor = GlassDialogColor,
-            tonalElevation = 0.dp,
             title = { Text("确定要继续？") },
             text = { Text("切回工作状态后，将停止本次自动恢复并重新开放状态记录。") },
-            confirmButton = {
-                TextButton(onClick = { onStepChange(3) }) { Text("确定") }
-            },
-            dismissButton = {
-                TextButton(onClick = onDismiss) { Text("返回休息") }
+            actions = {
+                GlassActionButton(text = "返回休息", onClick = onDismiss)
+                GlassActionButton(text = "确定", onClick = { onStepChange(3) })
             }
         )
-        3 -> AlertDialog(
+        3 -> GlassDialog(
             onDismissRequest = onDismiss,
-            shape = GlassDialogShape,
-            containerColor = GlassDialogColor,
-            tonalElevation = 0.dp,
             title = { Text("务必维持好自己的状态") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -339,16 +340,13 @@ private fun WorkModeUnlockDialogs(
                     )
                 }
             },
-            confirmButton = {
-                TextButton(
+            actions = {
+                GlassActionButton(text = "继续休息", onClick = onDismiss)
+                GlassActionButton(
+                    text = "解除工作锁定",
                     onClick = onUnlock,
                     enabled = phrase == WorkModeUnlockPhrase
-                ) {
-                    Text("解除并进入工作状态")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = onDismiss) { Text("继续休息") }
+                )
             }
         )
     }
@@ -389,11 +387,8 @@ private fun CheckinDialog(
         onDismiss()
     }
 
-    AlertDialog(
+    GlassDialog(
         onDismissRequest = dismissWithCleanup,
-        shape = GlassDialogShape,
-        containerColor = GlassDialogColor,
-        tonalElevation = 0.dp,
         title = { Text("现在感觉怎么样？") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -435,13 +430,12 @@ private fun CheckinDialog(
                                             .height(150.dp)
                                             .clip(RoundedCornerShape(18.dp))
                                     )
-                                    TextButton(
+                                    GlassActionButton(
+                                        text = "移除",
                                         onClick = { deletePhoto(path); photoPaths = photoPaths - path },
                                         modifier = Modifier
                                             .align(Alignment.TopEnd)
-                                            .background(Color.Black.copy(alpha = .38f), RoundedCornerShape(12.dp))
-                                            .padding(horizontal = 8.dp)
-                                    ) { Text("移除", color = Color.White) }
+                                    )
                                 }
                             }
                         }
@@ -471,15 +465,9 @@ private fun CheckinDialog(
                 }
             }
         },
-        confirmButton = {
-            TextButton(onClick = { onSave(value, note, photoPaths) }) {
-                Text("保存")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = dismissWithCleanup) {
-                Text("稍后")
-            }
+        actions = {
+            GlassActionButton(text = "稍后", onClick = dismissWithCleanup)
+            GlassActionButton(text = "保存", onClick = { onSave(value, note, photoPaths) })
         }
     )
 }

@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.jiang.vitality"
-    compileSdk = 35
+    compileSdk = 36
     defaultConfig {
         applicationId = "com.jiang.vitality.compose"
         minSdk = 29
@@ -19,7 +19,12 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions { jvmTarget = "17" }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
 }
 
 dependencies {
@@ -32,6 +37,7 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.core:core-ktx:1.16.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.0")
+    implementation("io.github.kyant0:backdrop:1.0.6")
     implementation("dev.chrisbanes.haze:haze:1.6.10")
     implementation("dev.chrisbanes.haze:haze-materials:1.6.10")
     debugImplementation("androidx.compose.ui:ui-tooling")

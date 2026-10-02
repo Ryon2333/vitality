@@ -1,6 +1,5 @@
 package com.jiang.vitality.ui
 
-import android.app.TimePickerDialog
 import android.os.Build
 import android.provider.Settings
 import android.content.Intent
@@ -21,6 +20,10 @@ import androidx.compose.ui.unit.sp
 import com.jiang.vitality.data.Reminder
 import com.jiang.vitality.data.Snapshot
 import com.jiang.vitality.reminder.AlarmScheduler
+import com.jiang.vitality.ui.backdrop.LiquidSlider
+import com.jiang.vitality.ui.backdrop.LiquidToggle
+import com.jiang.vitality.ui.backdrop.LocalBackdrop
+import com.kyant.backdrop.backdrops.emptyBackdrop
 import java.time.LocalDate
 
 @Composable fun SettingsScreen(
@@ -30,10 +33,15 @@ import java.time.LocalDate
     onExportData: (Uri) -> Boolean,
     onImportData: (Uri) -> String
 ) {
-    val context=LocalContext.current
+    val context = LocalContext.current
+    val backdrop = LocalBackdrop.current ?: emptyBackdrop()
     var editing by remember { mutableStateOf<Reminder?>(null) }
     var newTitle by remember { mutableStateOf("") }
     var adding by remember { mutableStateOf(false) }
+    var pendingTimeTitle by remember { mutableStateOf<String?>(null) }
+    var pendingTimeReminder by remember { mutableStateOf<Reminder?>(null) }
+    var timeHour by remember { mutableIntStateOf(16) }
+    var timeMinute by remember { mutableIntStateOf(0) }
     var transferMessage by remember { mutableStateOf("") }
     var baseline by remember(state.baseline) { mutableFloatStateOf(state.baseline.toFloat()) }
     val exportLauncher = rememberLauncherForActivityResult(
@@ -45,26 +53,47 @@ import java.time.LocalDate
         if (uri != null) transferMessage = onImportData(uri)
     }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
-        Text("设置",color=Ink,fontSize=28.sp,fontWeight=FontWeight.Bold)
+        GlassPageHeader(title="设置",subtitle="提醒、基线与数据管理。",modifier=Modifier.fillMaxWidth())
         GlassCard(Modifier.fillMaxWidth()) { Column(Modifier.fillMaxWidth().padding(20.dp)) {
             Text("状态询问",fontSize=18.sp,color=Ink,fontWeight=FontWeight.Bold)
             Text("固定时间发通知；时间可逐项修改。",fontSize=12.sp,color=Muted)
             state.reminders.forEach { item ->
-                Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().padding(vertical = 4.dp),verticalAlignment=Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(item.title,color=Ink,fontWeight=FontWeight.Medium)
                         Text(item.clock,color=Muted,fontSize=12.sp)
                     }
-                    TextButton(onClick={ editing=item; newTitle=item.title }) { Text("修改") }
-                    Switch(checked=item.enabled,onCheckedChange={ checked -> onReminders(state.reminders.map { if(it.id==item.id)it.copy(enabled=checked) else it }) })
+                    GlassActionButton(text="修改", onClick={ editing=item; newTitle=item.title })
+                    Spacer(Modifier.width(8.dp))
+                    LiquidToggle(
+                        selected = { item.enabled },
+                        onSelect = { checked ->
+                            onReminders(state.reminders.map { if(it.id==item.id)it.copy(enabled=checked) else it })
+                        },
+                        backdrop = backdrop,
+                        accentColor = Blue
+                    )
                 }
             }
+            Spacer(Modifier.height(8.dp))
             GlassOutlinedButton(onClick={adding=true;newTitle=""},modifier=Modifier.fillMaxWidth()) { Text("＋ 新增询问") }
         } }
         GlassCard(Modifier.fillMaxWidth()) { Column(Modifier.fillMaxWidth().padding(20.dp)) {
             Text("初始值  ${baseline.toInt()}",color=Ink,fontWeight=FontWeight.Bold)
             Text("仅在没有记录时作为当前状态。",fontSize=12.sp,color=Muted)
-            Slider(value=baseline,onValueChange={baseline=it},valueRange=0f..100f,onValueChangeFinished={onBaseline(baseline.toInt())})
+            Spacer(Modifier.height(10.dp))
+            LiquidSlider(
+                value = { baseline },
+                onValueChange = {
+                    baseline = it
+                    onBaseline(it.toInt())
+                },
+                valueRange = 0f..100f,
+                visibilityThreshold = 1f,
+                backdrop = backdrop,
+                accentColor = Blue,
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+            )
         } }
         GlassCard(Modifier.fillMaxWidth()) {
             Column(Modifier.fillMaxWidth().padding(20.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
@@ -86,26 +115,52 @@ import java.time.LocalDate
             }
         }
         if(!AlarmScheduler.exactAllowed(context)) GlassCard(Modifier.fillMaxWidth()) {
-            TextButton(onClick={if(Build.VERSION.SDK_INT>=31) context.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).setData(Uri.parse("package:${context.packageName}")))}) {
-                Text("开启精确提醒权限，减少系统延迟")
-            }
+            GlassOutlinedButton(
+                onClick={if(Build.VERSION.SDK_INT>=31) context.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).setData(Uri.parse("package:${context.packageName}")))},
+                modifier=Modifier.fillMaxWidth()
+            ) { Text("开启精确提醒权限，减少系统延迟") }
         }
         Text("通知权限需在首次启动时授予。ColorOS 若限制后台活动，也需要允许此应用后台运行。",color=Muted,fontSize=12.sp)
     }
-    if(adding || editing!=null) AlertDialog(onDismissRequest={adding=false;editing=null},shape=GlassDialogShape,containerColor=GlassDialogColor,tonalElevation=0.dp,title={Text(if(adding) "新增询问" else "修改询问")},
+    if(adding || editing!=null) GlassDialog(onDismissRequest={adding=false;editing=null},title={Text(if(adding) "新增询问" else "修改询问")},
         text={OutlinedTextField(newTitle,{newTitle=it.take(30)},singleLine=true,label={Text("名称")},shape=GlassControlShape,colors=glassTextFieldColors())},
-        confirmButton={TextButton(onClick={
+        actions={
+            if(editing!=null) GlassActionButton(text="删除", onClick={ onReminders(state.reminders.filterNot { it.id==editing?.id }); editing=null })
+            GlassActionButton(text="取消", onClick={adding=false;editing=null})
+            GlassActionButton(text="设置时间", onClick={
             val old=editing
             val title=newTitle.trim().ifEmpty { "状态询问" }
+            pendingTimeReminder=old
+            pendingTimeTitle=title
+            timeHour=old?.hour ?: 16
+            timeMinute=old?.minute ?: 0
             adding=false;editing=null
-            TimePickerDialog(context,{_,hour,minute->
-                val updated=if(old==null) state.reminders+Reminder((state.reminders.maxOfOrNull { it.id } ?: 0)+1,title,hour,minute)
-                    else state.reminders.map { if(it.id==old.id)it.copy(title=title,hour=hour,minute=minute) else it }
-                onReminders(updated)
-            },old?.hour ?: 16,old?.minute ?: 0,true).show()
-        }) {Text("设置时间")}},
-        dismissButton={ Row {
-            if(editing!=null) TextButton(onClick={ onReminders(state.reminders.filterNot { it.id==editing?.id }); editing=null }){Text("删除")}
-            TextButton(onClick={adding=false;editing=null}){Text("取消")}
-        } })
+        }) })
+
+    pendingTimeTitle?.let { title ->
+        GlassDialog(
+            onDismissRequest={ pendingTimeTitle=null; pendingTimeReminder=null },
+            title={ Text("设置提醒时间") },
+            text={
+                Column(verticalArrangement=Arrangement.spacedBy(14.dp)) {
+                    Text(String.format("%02d:%02d", timeHour, timeMinute), color=Blue, fontSize=30.sp, fontWeight=FontWeight.Bold)
+                    Text("小时  $timeHour", color=Ink, fontWeight=FontWeight.Medium)
+                    GlassVitalitySlider(value=timeHour,onValueChange={timeHour=it},valueRange=0..23,modifier=Modifier.fillMaxWidth())
+                    Text("分钟  $timeMinute", color=Ink, fontWeight=FontWeight.Medium)
+                    GlassVitalitySlider(value=timeMinute,onValueChange={timeMinute=it},valueRange=0..59,modifier=Modifier.fillMaxWidth())
+                }
+            },
+            actions={
+                GlassActionButton(text="取消",onClick={ pendingTimeTitle=null;pendingTimeReminder=null })
+                GlassActionButton(text="保存",onClick={
+                    val old=pendingTimeReminder
+                    val updated=if(old==null) state.reminders+Reminder((state.reminders.maxOfOrNull { it.id } ?: 0)+1,title,timeHour,timeMinute)
+                        else state.reminders.map { if(it.id==old.id)it.copy(title=title,hour=timeHour,minute=timeMinute) else it }
+                    onReminders(updated)
+                    pendingTimeTitle=null
+                    pendingTimeReminder=null
+                })
+            }
+        )
+    }
 }

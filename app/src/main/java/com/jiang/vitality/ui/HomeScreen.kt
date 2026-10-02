@@ -1,6 +1,7 @@
 package com.jiang.vitality.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
@@ -77,14 +78,32 @@ fun HomeScreen(
                     Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 21.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Surface(
-                        color = Blue.copy(alpha = .09f),
-                        contentColor = Blue,
-                        shape = RoundedCornerShape(50)
+                    Box(
+                        modifier = Modifier
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(
+                                        (if (state.locked) RecoveryCoral else Blue).copy(alpha = 0.18f),
+                                        (if (state.locked) RecoveryCoral else Blue).copy(alpha = 0.08f)
+                                    )
+                                ),
+                                shape = RoundedCornerShape(50)
+                            )
+                            .border(
+                                1.dp,
+                                Brush.verticalGradient(
+                                    listOf(
+                                        Color.White.copy(alpha = 0.88f),
+                                        (if (state.locked) RecoveryCoral else Blue).copy(alpha = 0.20f)
+                                    )
+                                ),
+                                shape = RoundedCornerShape(50)
+                            )
+                            .padding(horizontal = 14.dp, vertical = 6.dp)
                     ) {
                         Text(
                             if (state.locked) "RECOVERY MODE" else "LIVE VITALITY",
-                            modifier = Modifier.padding(horizontal = 13.dp, vertical = 7.dp),
+                            color = if (state.locked) RecoveryCoral else Blue,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 1.1.sp
@@ -243,8 +262,8 @@ private fun CollapsingHomeHeader(
             val progress = (scrollState.value / settleDistance).coerceIn(0f, 1f)
             drawRect(
                 brush = Brush.verticalGradient(
-                    0f to palette.background.copy(alpha = progress * .99f),
-                    .72f to palette.background.copy(alpha = progress * .96f),
+                    0f to palette.background.copy(alpha = progress * .46f),
+                    .72f to palette.background.copy(alpha = progress * .28f),
                     1f to palette.background.copy(alpha = 0f),
                     endY = size.height
                 )
