@@ -27,7 +27,7 @@ import java.time.format.DateTimeFormatter
 
 @Composable fun HistoryScreen(state: Snapshot) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
-        Text("日记",color=Ink,fontWeight=FontWeight.Bold,fontSize=28.sp)
+        GlassPageHeader(title="日记",subtitle="每一次状态与感受都留在这里。",modifier=Modifier.fillMaxWidth())
         GlassCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(20.dp)) {
             Text("近七天",color=Ink,fontWeight=FontWeight.Bold,fontSize=18.sp)
             WeekChart(state.week)
@@ -45,7 +45,7 @@ import java.time.format.DateTimeFormatter
                         Text("${entries.size} 条",color=Muted,fontSize=12.sp)
                     }
                     entries.forEachIndexed { index, entry ->
-                        if(index > 0) HorizontalDivider(color=Color.White.copy(alpha=.62f))
+                        if(index > 0) HorizontalDivider(color=Color.White.copy(alpha=.34f))
                         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
                             Text(
                                 Instant.ofEpochMilli(entry.time).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("HH:mm")),

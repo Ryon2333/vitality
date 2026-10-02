@@ -1,5 +1,4 @@
-// 複製到你的專案後，把 package 改成自己的（其餘不用動）
-package com.example.glassui
+package com.jiang.vitality.ui
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
@@ -23,19 +22,9 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
 /**
- * 液態分段切換共用元件——App 內所有分段開關類元件
- * 都用這套：選中指示藥丸從舊格「滑」到新格（前緣快後緣慢的雙彈簧，行進中微拉伸），
- * 取代硬切背景色。
- *
- * 用法（三件事）：
- * 1. `val seg = rememberLiquidSegmentState()`，容器內呼叫 `LiquidSegmentAnimation(seg, selectedIndex)`。
- * 2. 容器 Row 的 modifier 鏈上掛 `.liquidSegmentIndicator(seg, fill = ...)`（放在 clip/background 之後、
- *    padding 之前），指示藥丸會畫在所有選項後面。
- * 3. 每個選項 modifier 掛 `.liquidSegmentItem(seg, index)`。選項自己不要再畫選中背景，
- *    文字／邊框色用 animateColorAsState 淡變。
- *
- * 效能鐵則同導覽列藥丸：動畫值只在 drawBehind（繪製階段）讀，動畫幀不重組不排版。
- * 選項寬度不必相等，位置靠 onGloballyPositioned 實測。
+ * 液态分段切换通用状态与指示器修饰符。
+ * 选中指示药丸从旧格滑动到新格（前缘快后缘慢的双弹簧，行进中自然微拉伸），
+ * 替代生硬的直接变色。
  */
 class LiquidSegmentState internal constructor() {
     internal val bounds = mutableStateMapOf<Int, Rect>()
@@ -45,9 +34,6 @@ class LiquidSegmentState internal constructor() {
     internal var top = 0f
     internal var height = 0f
 
-    // 容器（指示繪製那一層）與各選項的實際座標。選項框一律用 localBoundingBoxOf
-    // 換算到容器座標系——選項回報的是「padding 之後」的內縮空間、繪製發生在
-    // 「padding 之前」的外框空間，直接拿 positionInParent 會差一個內距（踩過，錯位）。
     internal var containerCoords: LayoutCoordinates? = null
     internal val itemCoords = HashMap<Int, LayoutCoordinates>()
 
@@ -67,10 +53,6 @@ class LiquidSegmentState internal constructor() {
 @Composable
 fun rememberLiquidSegmentState(): LiquidSegmentState = remember { LiquidSegmentState() }
 
-/**
- * 驅動指示藥丸的動畫。`selectedIndex` 傳 -1（或該格尚未量到位置）時指示淡出，
- * 適合「目前速度不在任何預設上」這種無選中狀態。
- */
 @Composable
 fun LiquidSegmentAnimation(state: LiquidSegmentState, selectedIndex: Int) {
     val target = state.bounds[selectedIndex]
@@ -82,7 +64,6 @@ fun LiquidSegmentAnimation(state: LiquidSegmentState, selectedIndex: Int) {
         state.top = target.top
         state.height = target.height
         if (state.leftEdge.value.isNaN() || state.alpha.value == 0f) {
-            // 第一次出現（或從無選中回來）：直接就位再淡入，不要從外太空滑進來
             state.leftEdge.snapTo(target.left)
             state.rightEdge.snapTo(target.right)
             state.alpha.animateTo(1f, spring(stiffness = 600f))
@@ -97,17 +78,12 @@ fun LiquidSegmentAnimation(state: LiquidSegmentState, selectedIndex: Int) {
     }
 }
 
-/** 掛在每個選項上：記下自己的座標，換算交給 [LiquidSegmentState.refresh]。 */
 fun Modifier.liquidSegmentItem(state: LiquidSegmentState, index: Int): Modifier =
     onGloballyPositioned { coords ->
         state.itemCoords[index] = coords
         state.refresh(index)
     }
 
-/**
- * 掛在容器上：把指示藥丸畫在所有選項後面。
- * [cornerRadius] 傳 null＝全膠囊（高度一半）。
- */
 fun Modifier.liquidSegmentIndicator(
     state: LiquidSegmentState,
     fill: Color,
@@ -119,10 +95,6 @@ fun Modifier.liquidSegmentIndicator(
     fillColor = fill, borderColor = border, fillBrush = null, borderBrush = null,
 )
 
-/**
- * 漸層版指示藥丸——導覽列式那顆「半透明主色上深下淺＋白色高光描邊」的玻璃藥丸
- * 用的就是這個配方。純色版仍走上面的 [liquidSegmentIndicator]。
- */
 fun Modifier.liquidSegmentIndicatorBrush(
     state: LiquidSegmentState,
     fill: Brush,
@@ -143,7 +115,6 @@ private fun Modifier.liquidSegmentIndicatorImpl(
     fillBrush: Brush?,
     borderBrush: Brush?,
 ): Modifier = onGloballyPositioned { coords ->
-    // 在繪製同一個鏈位記座標，指示框與畫布必然同一座標系
     state.containerCoords = coords
     state.refreshAll()
 }.drawBehind {

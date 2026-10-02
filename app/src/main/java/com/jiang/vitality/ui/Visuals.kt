@@ -55,9 +55,9 @@ private val DayColors = VitalityColors(
     accent = Color(0xFF144BB0),
     background = Color(0xFFF0F3F8),
     cardColors = listOf(
-        Color.White.copy(alpha = .64f),
-        Color(0xFFE8EEF7).copy(alpha = .38f),
-        Color.White.copy(alpha = .48f)
+        Color.White.copy(alpha = .18f),
+        Color(0xFFE8EEF7).copy(alpha = .10f),
+        Color.White.copy(alpha = .12f)
     ),
     cardBorder = Color.White.copy(alpha = .90f)
 )
@@ -68,9 +68,9 @@ private val RecoveryColors = VitalityColors(
     accent = RecoveryCoral,
     background = Color(0xFFFFF0DE),
     cardColors = listOf(
-        Color(0xFFFFFBF5).copy(alpha = .62f),
-        RecoveryOrange.copy(alpha = .07f),
-        Color.White.copy(alpha = .44f)
+        Color(0xFFFFFBF5).copy(alpha = .18f),
+        RecoveryOrange.copy(alpha = .035f),
+        Color.White.copy(alpha = .10f)
     ),
     cardBorder = Color.White.copy(alpha = .88f)
 )
