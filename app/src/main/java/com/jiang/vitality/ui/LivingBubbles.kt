@@ -16,6 +16,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
@@ -124,9 +125,9 @@ fun LivingRestBubbleField(
     }
     val density = LocalDensity.current
     // The recovery marker remains spatially fixed while the page moves beneath it.
-    val callWidth = 240.dp
-    val callHeight = 88.dp
-    val callTop = 72.dp
+    val callWidth = 210.dp
+    val callHeight = 64.dp
+    val callTop = 20.dp
 
     BoxWithConstraints(modifier) {
         val areaWidth = constraints.maxWidth.toFloat()
@@ -255,15 +256,17 @@ fun LivingRestBubbleField(
                 dismissible = false,
                 onPlaySound = { onPlayBubbleSound(true) },
                 onDismiss = {},
-                fontSize = 20.sp,
+                fontSize = 15.sp,
                 baseRotation = 45f,
                 rotationAmplitude = 0f,
-                flowingText = true,
-                radiantRainbow = true,
+                flowingText = false,
+                radiantRainbow = false,
+                elegantTitle = true,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(top = callTop)
-                    .zIndex(4f)
+                    .offset(x = 26.dp, y = (-20).dp)
+                    .zIndex(1f)
             )
         }
     }
@@ -284,7 +287,8 @@ private fun LivingGlassBubble(
     baseRotation: Float = 0f,
     rotationAmplitude: Float = 2f,
     flowingText: Boolean = false,
-    radiantRainbow: Boolean = false
+    radiantRainbow: Boolean = false,
+    elegantTitle: Boolean = false
 ) {
     val context = LocalContext.current
     val extra = 24.dp
@@ -499,10 +503,11 @@ private fun LivingGlassBubble(
                 }
                 Text(
                     text,
-                    color = if (flowingText) Color.White else Ink,
+                    color = if (flowingText) Color.White else Ink.copy(alpha = if (elegantTitle) .78f else 1f),
                     fontSize = fontSize,
                     lineHeight = fontSize * 1.08f,
-                    fontWeight = if (radiantRainbow) FontWeight.Bold else FontWeight.SemiBold,
+                    fontWeight = if (radiantRainbow) FontWeight.Bold else if (elegantTitle) FontWeight.Medium else FontWeight.SemiBold,
+                    letterSpacing = if (elegantTitle) 1.8.sp else 0.sp,
                     textAlign = TextAlign.Center,
                     maxLines = 1,
                     modifier = flowingModifier

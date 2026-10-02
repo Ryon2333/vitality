@@ -98,6 +98,8 @@ class MainActivity : ComponentActivity() {
         val bubbleSounds = rememberBubbleSoundPlayer()
         val context = LocalContext.current
         val meditationPlayer = remember { MeditationPlayer(context) }
+        val musicNames = store.musicNames()
+        val musicTracks = musicNames.map { it to store.musicFile(it) }
         DisposableEffect(Unit) {
             onDispose { meditationPlayer.release() }
         }
@@ -169,24 +171,38 @@ class MainActivity : ComponentActivity() {
                                     store.saveRests(it)
                                     refresh()
                                 },
-                                musicNames = store.musicNames(),
+                                musicNames = musicNames,
                                 currentMusic = meditationPlayer.currentName,
                                 isPlaying = meditationPlayer.isPlaying,
+                                positionMillis = meditationPlayer.positionMillis,
+                                durationMillis = meditationPlayer.durationMillis,
+                                playbackMode = meditationPlayer.mode,
+                                playbackError = meditationPlayer.playbackError,
                                 onImportMusic = { uri ->
-                                    if (store.importMusic(uri) != null) refresh()
+                                    store.importMusic(uri)?.let { imported ->
+                                        refresh()
+                                        meditationPlayer.play(
+                                            imported,
+                                            store.musicNames().map { it to store.musicFile(it) }
+                                        )
+                                    }
                                 },
                                 onToggleMusic = { name ->
                                     if (meditationPlayer.currentName == name) {
                                         meditationPlayer.toggle()
                                     } else {
-                                        meditationPlayer.play(store.musicFile(name), name)
+                                        meditationPlayer.play(name, musicTracks)
                                     }
                                 },
                                 onDeleteMusic = { name ->
                                     if (meditationPlayer.currentName == name) meditationPlayer.stop()
                                     store.deleteMusic(name)
                                     refresh()
-                                }
+                                },
+                                onPreviousMusic = meditationPlayer::previous,
+                                onNextMusic = meditationPlayer::next,
+                                onSeekMusic = meditationPlayer::seekTo,
+                                onPlaybackMode = { meditationPlayer.setMode(it, musicTracks) }
                             )
                             2 -> HistoryScreen(snapshot)
                             else -> SettingsScreen(
@@ -226,6 +242,18 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+                NowPlayingBubble(
+                    title = meditationPlayer.currentName,
+                    playing = meditationPlayer.isPlaying,
+                    positionMillis = meditationPlayer.positionMillis,
+                    durationMillis = meditationPlayer.durationMillis,
+                    onOpen = { tab = 1; navigationCollapsed = false },
+                    onToggle = meditationPlayer::toggle,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .navigationBarsPadding()
+                        .padding(bottom = 92.dp, start = 30.dp, end = 30.dp)
+                )
                 JiangLiquidNavigationBar(
                     selectedIndex = tab,
                     onSelected = {

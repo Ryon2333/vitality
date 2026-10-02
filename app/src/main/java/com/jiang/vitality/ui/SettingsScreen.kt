@@ -54,17 +54,20 @@ import java.time.LocalDate
     }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
         GlassPageHeader(title="设置",subtitle="提醒、基线与数据管理。",modifier=Modifier.fillMaxWidth())
-        GlassCard(Modifier.fillMaxWidth()) { Column(Modifier.fillMaxWidth().padding(20.dp)) {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("状态询问",fontSize=18.sp,color=Ink,fontWeight=FontWeight.Bold)
-            Text("固定时间发通知；时间可逐项修改。",fontSize=12.sp,color=Muted)
-            state.reminders.forEach { item ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 4.dp),verticalAlignment=Alignment.CenterVertically) {
+            Text("轻触展开时间卡片，长按编辑。",fontSize=12.sp,color=Muted)
+            ExpandableGlassStack(
+                items = state.reminders,
+                key = { it.id },
+                onLongPress = { editing=it; newTitle=it.title },
+                onAdd = { adding=true; newTitle="" }
+            ) { item ->
+                Row(Modifier.fillMaxSize(), verticalAlignment=Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(item.title,color=Ink,fontWeight=FontWeight.Medium)
                         Text(item.clock,color=Muted,fontSize=12.sp)
                     }
-                    GlassActionButton(text="修改", onClick={ editing=item; newTitle=item.title })
-                    Spacer(Modifier.width(8.dp))
                     LiquidToggle(
                         selected = { item.enabled },
                         onSelect = { checked ->
@@ -75,9 +78,7 @@ import java.time.LocalDate
                     )
                 }
             }
-            Spacer(Modifier.height(8.dp))
-            GlassOutlinedButton(onClick={adding=true;newTitle=""},modifier=Modifier.fillMaxWidth()) { Text("＋ 新增询问") }
-        } }
+        }
         GlassCard(Modifier.fillMaxWidth()) { Column(Modifier.fillMaxWidth().padding(20.dp)) {
             Text("初始值  ${baseline.toInt()}",color=Ink,fontWeight=FontWeight.Bold)
             Text("仅在没有记录时作为当前状态。",fontSize=12.sp,color=Muted)

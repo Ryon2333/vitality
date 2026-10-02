@@ -40,5 +40,7 @@ dependencies {
     implementation("io.github.kyant0:backdrop:1.0.6")
     implementation("dev.chrisbanes.haze:haze:1.6.10")
     implementation("dev.chrisbanes.haze:haze-materials:1.6.10")
+    implementation("androidx.media3:media3-exoplayer:1.11.1")
+    implementation("androidx.media3:media3-session:1.11.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

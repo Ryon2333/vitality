@@ -2,7 +2,6 @@ package com.jiang.vitality.ui
 
 import android.content.Context
 import android.os.Build
-import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -45,7 +44,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private const val HoldDurationMillis = 3_000L
@@ -59,6 +57,7 @@ fun HoldToCallItADayButton(
     val context = LocalContext.current
     val vibrator = remember(context) { context.primaryVibrator() }
     val progress = remember { Animatable(0f) }
+    val keepConfirmationPulse = remember { mutableStateOf(false) }
     var pressed by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (pressed) .955f else 1f,
@@ -69,7 +68,7 @@ fun HoldToCallItADayButton(
     val palette = if (recoveryMode) CallItADayFlowPalette else DayFlowPalette
 
     DisposableEffect(vibrator) {
-        onDispose { vibrator.cancel() }
+        onDispose { if (!keepConfirmationPulse.value) vibrator.cancel() }
     }
 
     Box(
@@ -89,13 +88,13 @@ fun HoldToCallItADayButton(
             .pointerInput(onConfirmed, vibrator) {
                 detectTapGestures(
                     onPress = {
-                        val startedAt = SystemClock.elapsedRealtime()
                         pressed = true
                         progress.snapTo(0f)
                         vibrator.startRisingVibration()
 
                         coroutineScope {
-                            val progressJob = launch {
+                            var confirmed = false
+                            val confirmationJob = launch {
                                 progress.animateTo(
                                     targetValue = 1f,
                                     animationSpec = tween(
@@ -103,27 +102,18 @@ fun HoldToCallItADayButton(
                                         easing = LinearEasing
                                     )
                                 )
-                            }
-                            val releasedNormally = tryAwaitRelease()
-                            val heldFor = SystemClock.elapsedRealtime() - startedAt
-                            progressJob.cancel()
-                            pressed = false
-                            vibrator.cancel()
-
-                            if (releasedNormally && heldFor >= HoldDurationMillis) {
-                                progress.snapTo(1f)
-                                vibrator.vibrate(
-                                    VibrationEffect.createOneShot(
-                                        1_000L,
-                                        255
-                                    )
-                                )
-                                // Keep this composable alive until the full-power confirmation
-                                // pulse finishes; otherwise entering recovery would dispose it
-                                // immediately and cancel the vibrator.
-                                delay(1_000L)
+                                confirmed = true
+                                pressed = false
+                                vibrator.cancel()
+                                keepConfirmationPulse.value = true
+                                vibrator.vibrate(VibrationEffect.createOneShot(1_000L, 255))
                                 onConfirmed()
-                            } else {
+                            }
+                            tryAwaitRelease()
+                            if (!confirmed) {
+                                confirmationJob.cancel()
+                                pressed = false
+                                vibrator.cancel()
                                 progress.animateTo(
                                     targetValue = 0f,
                                     animationSpec = spring(
