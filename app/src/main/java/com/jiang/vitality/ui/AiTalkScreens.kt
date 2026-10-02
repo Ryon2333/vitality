@@ -33,6 +33,7 @@ import io.noties.markwon.ext.tables.TablePlugin
 import io.noties.markwon.ext.tasklist.TaskListPlugin
 import io.noties.markwon.ext.latex.JLatexMathPlugin
 import io.noties.markwon.html.HtmlPlugin
+import io.noties.markwon.inlineparser.MarkwonInlineParserPlugin
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -257,12 +258,21 @@ fun AiTalkDetail(
 private fun MarkdownAnswer(markdown: String, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val textSizePx = with(LocalDensity.current) { 16.sp.toPx() }
-    val markwon = remember(context, textSizePx) {
+    val richMarkwon = remember(context, textSizePx) {
         Markwon.builder(context)
             .usePlugin(StrikethroughPlugin.create())
             .usePlugin(TablePlugin.create(context))
             .usePlugin(TaskListPlugin.create(context))
+            .usePlugin(MarkwonInlineParserPlugin.create())
             .usePlugin(JLatexMathPlugin.create(textSizePx) { it.inlinesEnabled(true) })
+            .usePlugin(HtmlPlugin.create())
+            .build()
+    }
+    val safeMarkwon = remember(context) {
+        Markwon.builder(context)
+            .usePlugin(StrikethroughPlugin.create())
+            .usePlugin(TablePlugin.create(context))
+            .usePlugin(TaskListPlugin.create(context))
             .usePlugin(HtmlPlugin.create())
             .build()
     }
@@ -284,7 +294,14 @@ private fun MarkdownAnswer(markdown: String, modifier: Modifier = Modifier) {
         update = { view ->
             view.setTextColor(textColor)
             view.setLinkTextColor(linkColor)
-            markwon.setMarkdown(view, normalizeChatGptMarkdown(markdown))
+            val normalized = normalizeChatGptMarkdown(markdown)
+            runCatching {
+                richMarkwon.setMarkdown(view, normalized)
+            }.getOrElse {
+                // Unsupported or malformed formulas must not make the whole conversation unreadable.
+                runCatching { safeMarkwon.setMarkdown(view, markdown) }
+                    .getOrElse { view.text = markdown }
+            }
         }
     )
 }
