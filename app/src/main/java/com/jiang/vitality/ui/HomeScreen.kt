@@ -49,6 +49,7 @@ fun HomeScreen(
     state: Snapshot,
     onRecord: () -> Unit,
     onRecovery: () -> Unit,
+    onRecoveryPhoto: () -> Unit = {},
     onPlayBubbleSound: (callItADay: Boolean) -> Unit = {},
     onCollapse: () -> Unit = {}
 ) {
@@ -142,6 +143,28 @@ fun HomeScreen(
                         enabled = !state.locked,
                         modifier = Modifier.fillMaxWidth()
                     )
+                }
+            }
+
+            if (state.locked) {
+                GlassCard(Modifier.fillMaxWidth()) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(18.dp),
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            Modifier.size(48.dp).background(RecoveryOrange.copy(alpha = .16f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("◎", color = RecoveryCoral, fontSize = 25.sp, fontWeight = FontWeight.Light)
+                        }
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text("拍下休息的一刻", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            Text("每保存一张照片，精力值 +1", color = Muted, fontSize = 12.sp)
+                        }
+                        GlassActionButton("拍照", onRecoveryPhoto)
+                    }
                 }
             }
 

@@ -76,6 +76,36 @@ class VitalityStore(context: Context) {
         return true
     }
     @Synchronized fun adjust(delta: Int) = record((snapshot().value + delta).coerceIn(0, 100))
+
+    /** Saves one recovery photo as a journal entry and awards exactly one vitality point. */
+    @Synchronized fun recordRecoveryPhoto(path: String): Boolean {
+        val current = snapshot()
+        if (!current.locked || path.isBlank() || !File(path).isFile) return false
+        val base = prefs.getInt("recovery_base", current.value)
+        val nextValue = (current.value + 1).coerceAtMost(100)
+        val all = readings().takeLast(4999) + Reading(
+            time = System.currentTimeMillis(),
+            value = nextValue,
+            note = "休息时拍下的一刻",
+            photoPaths = listOf(path)
+        )
+        return prefs.edit()
+            .putInt("recovery_base", (base + 1).coerceAtMost(100))
+            .putString("readings", readingsJson(all).toString())
+            .commit()
+    }
+
+    /** Removes a single photo from a reading while preserving the reading and its other photos. */
+    @Synchronized fun deleteReadingPhoto(readingTime: Long, path: String): Boolean {
+        val current = readings()
+        val target = current.firstOrNull { it.time == readingTime && path in it.photoPaths } ?: return false
+        val updated = current.map { entry ->
+            if (entry.time == target.time) entry.copy(photoPaths = entry.photoPaths.filterNot { it == path }) else entry
+        }
+        val saved = prefs.edit().putString("readings", readingsJson(updated).toString()).commit()
+        if (saved) deletePhoto(path)
+        return saved
+    }
     @Synchronized fun setBaseline(value: Int) {
         val v = value.coerceIn(0, 100)
         val edit = prefs.edit().putInt("baseline", v)

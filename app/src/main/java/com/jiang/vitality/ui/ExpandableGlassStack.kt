@@ -38,7 +38,7 @@ fun <T> ExpandableGlassStack(
     items: List<T>,
     key: (T) -> Any,
     onLongPress: (T) -> Unit,
-    onAdd: () -> Unit,
+    onAdd: (() -> Unit)? = null,
     onDelete: ((T) -> Unit)? = null,
     modifier: Modifier = Modifier,
     cardHeight: Dp = 72.dp,
@@ -48,11 +48,11 @@ fun <T> ExpandableGlassStack(
     val step = cardHeight + 10.dp
     val collapsedTail = (items.size.coerceAtMost(4) - 1).coerceAtLeast(0) * 12
     val targetHeight = if (items.isEmpty()) {
-        54.dp
+        if (onAdd != null) 54.dp else 0.dp
     } else if (expanded) {
-        step * items.size + 58.dp
+        step * items.size + if (onAdd != null) 58.dp else 0.dp
     } else {
-        cardHeight + collapsedTail.dp + 54.dp
+        cardHeight + collapsedTail.dp + if (onAdd != null) 54.dp else 0.dp
     }
     val height by animateDpAsState(targetHeight, spring(dampingRatio = JiangMotion.SpatialDamping, stiffness = JiangMotion.SpatialStiffness), label = "stack-height")
 
@@ -124,17 +124,19 @@ fun <T> ExpandableGlassStack(
             }
         }
 
-        val addY = if (items.isEmpty()) 0.dp else if (expanded) step * items.size else cardHeight + collapsedTail.dp
-        val animatedAddY by animateDpAsState(addY, spring(dampingRatio = JiangMotion.SpatialDamping, stiffness = JiangMotion.SpatialStiffness), label = "stack-add")
-        GlassOutlinedButton(
-            onClick = onAdd,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp)
-                .offset(y = animatedAddY)
-                .alpha(if (items.isEmpty() || expanded) 1f else .78f)
-        ) {
-            androidx.compose.material3.Text("＋")
+        if (onAdd != null) {
+            val addY = if (items.isEmpty()) 0.dp else if (expanded) step * items.size else cardHeight + collapsedTail.dp
+            val animatedAddY by animateDpAsState(addY, spring(dampingRatio = JiangMotion.SpatialDamping, stiffness = JiangMotion.SpatialStiffness), label = "stack-add")
+            GlassOutlinedButton(
+                onClick = onAdd,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .offset(y = animatedAddY)
+                    .alpha(if (items.isEmpty() || expanded) 1f else .78f)
+            ) {
+                androidx.compose.material3.Text("＋")
+            }
         }
     }
 }

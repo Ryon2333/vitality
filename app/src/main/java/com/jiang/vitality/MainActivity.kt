@@ -100,6 +100,19 @@ class MainActivity : ComponentActivity() {
         val context = LocalContext.current
         val meditationPlayer = remember { MeditationPlayer(context) }
         var musicNames by remember { mutableStateOf(store.musicNames()) }
+        var recoveryPhotoPath by remember { mutableStateOf<String?>(null) }
+        val recoveryCameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { saved ->
+            val captured = recoveryPhotoPath
+            recoveryPhotoPath = null
+            if (saved && captured != null) {
+                store.finalizePhoto(captured)?.let { finalized ->
+                    if (!store.recordRecoveryPhoto(finalized)) store.deletePhoto(finalized)
+                    refresh()
+                }
+            } else if (captured != null) {
+                store.deletePhoto(captured)
+            }
+        }
         val musicTracks = musicNames.map { it to store.musicFile(it) }
         DisposableEffect(Unit) {
             onDispose { meditationPlayer.release() }
@@ -160,6 +173,16 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
                                 },
+                                onRecoveryPhoto = {
+                                    val file = store.createPhotoFile()
+                                    recoveryPhotoPath = file.absolutePath
+                                    val uri = FileProvider.getUriForFile(
+                                        this@MainActivity,
+                                        "${packageName}.fileprovider",
+                                        file
+                                    )
+                                    recoveryCameraLauncher.launch(uri)
+                                },
                                 onPlayBubbleSound = { callItADay ->
                                     if (callItADay) bubbleSounds.playCallItADay()
                                     else bubbleSounds.playRandomRestBubble()
@@ -212,7 +235,14 @@ class MainActivity : ComponentActivity() {
                                 onPlaybackMode = { meditationPlayer.setMode(it, musicTracks) },
                                 onCollapse = { navigationCollapsed = true }
                             )
-                            2 -> HistoryScreen(snapshot, onCollapse = { navigationCollapsed = true })
+                            2 -> HistoryScreen(
+                                state = snapshot,
+                                onDeletePhoto = { readingTime, path ->
+                                    store.deleteReadingPhoto(readingTime, path)
+                                    refresh()
+                                },
+                                onCollapse = { navigationCollapsed = true }
+                            )
                             else -> SettingsScreen(
                                 snapshot,
                                 onReminders = { updated ->
