@@ -42,5 +42,11 @@ dependencies {
     implementation("dev.chrisbanes.haze:haze-materials:1.6.10")
     implementation("androidx.media3:media3-exoplayer:1.11.1")
     implementation("androidx.media3:media3-session:1.11.1")
+    implementation("io.noties.markwon:core:4.6.2")
+    implementation("io.noties.markwon:ext-strikethrough:4.6.2")
+    implementation("io.noties.markwon:ext-tables:4.6.2")
+    implementation("io.noties.markwon:ext-tasklist:4.6.2")
+    implementation("io.noties.markwon:ext-latex:4.6.2")
+    implementation("io.noties.markwon:html:4.6.2")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

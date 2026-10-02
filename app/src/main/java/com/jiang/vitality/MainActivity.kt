@@ -100,6 +100,7 @@ class MainActivity : ComponentActivity() {
         val context = LocalContext.current
         val meditationPlayer = remember { MeditationPlayer(context) }
         var musicNames by remember { mutableStateOf(store.musicNames()) }
+        var aiTalks by remember { mutableStateOf(store.aiConversations()) }
         var recoveryPhotoPath by remember { mutableStateOf<String?>(null) }
         val recoveryCameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { saved ->
             val captured = recoveryPhotoPath
@@ -229,6 +230,16 @@ class MainActivity : ComponentActivity() {
                                     musicNames = store.musicNames()
                                     refresh()
                                 },
+                                aiTalks = aiTalks,
+                                onSaveAiTalk = { title, answer, tags ->
+                                    store.saveAiConversation(title, answer, tags)?.also {
+                                        aiTalks = store.aiConversations()
+                                    }
+                                },
+                                onDeleteAiTalk = { id ->
+                                    store.deleteAiConversation(id)
+                                    aiTalks = store.aiConversations()
+                                },
                                 onPreviousMusic = meditationPlayer::previous,
                                 onNextMusic = meditationPlayer::next,
                                 onSeekMusic = meditationPlayer::seekTo,
@@ -271,6 +282,7 @@ class MainActivity : ComponentActivity() {
                                             it.readText()
                                         } ?: error("无法读取备份文件")
                                         val summary = store.importData(raw)
+                                        aiTalks = store.aiConversations()
                                         refresh()
                                         AlarmScheduler.scheduleAll(this@MainActivity)
                                         "已导入 ${summary.readings} 条记录和 ${summary.photos} 张照片"

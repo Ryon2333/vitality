@@ -57,13 +57,17 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.jiang.vitality.data.AiConversation
 
-enum class SoundTherapyDestination { REST, LIBRARY, PLAYER }
+enum class SoundTherapyDestination { REST, LIBRARY, PLAYER, AI_LIBRARY, AI_EDITOR, AI_DETAIL }
 
 @Composable
 fun RestScreen(
     rests: List<String>,
     onSave: (List<String>) -> Unit,
+    aiTalks: List<AiConversation>,
+    onSaveAiTalk: (String, String, List<String>) -> AiConversation?,
+    onDeleteAiTalk: (Long) -> Unit,
     musicNames: List<String>,
     musicCoverPath: (String) -> String?,
     currentMusic: String?,
@@ -84,11 +88,18 @@ fun RestScreen(
     onPlaybackMode: (MusicPlaybackMode) -> Unit,
     onCollapse: () -> Unit = {}
 ) {
+    var selectedAiTalkId by remember { mutableStateOf<Long?>(null) }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) onImportMusic(uri)
     }
     BackHandler(enabled = destination != SoundTherapyDestination.REST) {
-        onDestination(if (destination == SoundTherapyDestination.PLAYER) SoundTherapyDestination.LIBRARY else SoundTherapyDestination.REST)
+        onDestination(
+            when (destination) {
+                SoundTherapyDestination.PLAYER -> SoundTherapyDestination.LIBRARY
+                SoundTherapyDestination.AI_EDITOR, SoundTherapyDestination.AI_DETAIL -> SoundTherapyDestination.AI_LIBRARY
+                else -> SoundTherapyDestination.REST
+            }
+        )
     }
     AnimatedContent(
         targetState = destination,
@@ -135,6 +146,7 @@ fun RestScreen(
             rests = rests,
             onSave = onSave,
             onOpenSoundTherapy = { onDestination(SoundTherapyDestination.LIBRARY) },
+            onOpenAiTalk = { onDestination(SoundTherapyDestination.AI_LIBRARY) },
             onCollapse = onCollapse
         )
         SoundTherapyDestination.LIBRARY -> SoundTherapyLibrary(
@@ -163,6 +175,47 @@ fun RestScreen(
             onSeek = onSeekMusic,
             onMode = onPlaybackMode
         )
+        SoundTherapyDestination.AI_LIBRARY -> AiTalkLibrary(
+            talks = aiTalks,
+            onBack = { onDestination(SoundTherapyDestination.REST) },
+            onAdd = { onDestination(SoundTherapyDestination.AI_EDITOR) },
+            onOpen = { talk ->
+                selectedAiTalkId = talk.id
+                onDestination(SoundTherapyDestination.AI_DETAIL)
+            },
+            onCollapse = onCollapse
+        )
+        SoundTherapyDestination.AI_EDITOR -> AiTalkEditor(
+            onBack = { onDestination(SoundTherapyDestination.AI_LIBRARY) },
+            onSave = { title, answer, tags ->
+                onSaveAiTalk(title, answer, tags)?.let { saved ->
+                    selectedAiTalkId = saved.id
+                    onDestination(SoundTherapyDestination.AI_DETAIL)
+                }
+            }
+        )
+        SoundTherapyDestination.AI_DETAIL -> {
+            val talk = aiTalks.firstOrNull { it.id == selectedAiTalkId }
+            if (talk != null) {
+                AiTalkDetail(
+                    talk = talk,
+                    onBack = { onDestination(SoundTherapyDestination.AI_LIBRARY) },
+                    onDelete = {
+                        onDeleteAiTalk(talk.id)
+                        selectedAiTalkId = null
+                        onDestination(SoundTherapyDestination.AI_LIBRARY)
+                    }
+                )
+            } else {
+                AiTalkLibrary(
+                    talks = aiTalks,
+                    onBack = { onDestination(SoundTherapyDestination.REST) },
+                    onAdd = { onDestination(SoundTherapyDestination.AI_EDITOR) },
+                    onOpen = { selected -> selectedAiTalkId = selected.id; onDestination(SoundTherapyDestination.AI_DETAIL) },
+                    onCollapse = onCollapse
+                )
+            }
+        }
     }
     }
 }
@@ -172,6 +225,7 @@ private fun RestOptionsPage(
     rests: List<String>,
     onSave: (List<String>) -> Unit,
     onOpenSoundTherapy: () -> Unit,
+    onOpenAiTalk: () -> Unit,
     onCollapse: () -> Unit
 ) {
     var editingRest by remember { mutableStateOf<String?>(null) }
@@ -200,18 +254,10 @@ private fun RestOptionsPage(
             }
         }
         Spacer(Modifier.height(14.dp))
-        Text("音疗", color = Ink, fontWeight = FontWeight.Bold, fontSize = 17.sp, modifier = Modifier.fillMaxWidth())
-        GlassCard(
-            modifier = Modifier.size(112.dp).clickable(onClick = onOpenSoundTherapy),
-            shape = CircleShape,
-            elevation = 12.dp
-        ) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("♫", color = Blue, fontSize = 28.sp)
-                    Text("音疗", color = Ink, fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp)
-                }
-            }
+        Text("恢复空间", color = Ink, fontWeight = FontWeight.Bold, fontSize = 17.sp, modifier = Modifier.fillMaxWidth())
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+            RestModuleBubble("♫", "音疗", onOpenSoundTherapy)
+            RestModuleBubble("ai", "ai谈", onOpenAiTalk)
         }
         Spacer(Modifier.height(140.dp))
     }
@@ -229,6 +275,22 @@ private fun RestOptionsPage(
             })
         }
     )
+}
+
+@Composable
+private fun RestModuleBubble(symbol: String, label: String, onClick: () -> Unit) {
+    GlassCard(
+        modifier = Modifier.size(112.dp).clickable(onClick = onClick),
+        shape = CircleShape,
+        elevation = 12.dp
+    ) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(symbol, color = Blue, fontSize = if (symbol == "ai") 21.sp else 28.sp, fontWeight = FontWeight.SemiBold)
+                Text(label, color = Ink, fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp)
+            }
+        }
+    }
 }
 
 @Composable

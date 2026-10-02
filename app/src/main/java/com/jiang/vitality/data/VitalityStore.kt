@@ -23,6 +23,13 @@ data class Reading(
     val photoPaths: List<String> = emptyList()
 )
 data class ImportSummary(val readings: Int, val photos: Int)
+data class AiConversation(
+    val id: Long,
+    val createdAt: Long,
+    val title: String,
+    val answer: String,
+    val tags: List<String> = emptyList()
+)
 data class Reminder(val id: Int, val title: String, val hour: Int, val minute: Int, val enabled: Boolean = true) {
     val clock: String get() = "%02d:%02d".format(hour, minute)
 }
@@ -182,6 +189,54 @@ class VitalityStore(context: Context) {
         prefs.edit().putString("rests",arr.toString()).commit()
     }
 
+    fun aiConversations(): List<AiConversation> = try {
+        val array = JSONArray(prefs.getString("ai_talks", "[]"))
+        List(array.length()) { index ->
+            val item = array.getJSONObject(index)
+            val tags = item.optJSONArray("tags") ?: JSONArray()
+            AiConversation(
+                id = item.getLong("id"),
+                createdAt = item.optLong("createdAt", item.getLong("id")),
+                title = item.optString("title"),
+                answer = item.optString("answer"),
+                tags = List(tags.length()) { tags.getString(it) }.filter { it.isNotBlank() }
+            )
+        }.sortedByDescending { it.createdAt }
+    } catch (_: Exception) { emptyList() }
+
+    @Synchronized fun saveAiConversation(title: String, answer: String, tags: List<String>): AiConversation? {
+        val cleanTitle = title.trim().take(500)
+        val cleanAnswer = answer.trim().take(500_000)
+        if (cleanTitle.isBlank() || cleanAnswer.isBlank()) return null
+        val now = System.currentTimeMillis()
+        val item = AiConversation(
+            id = now,
+            createdAt = now,
+            title = cleanTitle,
+            answer = cleanAnswer,
+            tags = tags.map { it.trim().removePrefix("#") }.filter { it.isNotBlank() }
+                .distinct().take(12)
+        )
+        saveAiConversations((aiConversations() + item).sortedByDescending { it.createdAt }.take(2000))
+        return item
+    }
+
+    @Synchronized fun deleteAiConversation(id: Long): Boolean =
+        saveAiConversations(aiConversations().filterNot { it.id == id })
+
+    private fun saveAiConversations(items: List<AiConversation>): Boolean {
+        val array = JSONArray()
+        items.forEach { talk ->
+            array.put(JSONObject()
+                .put("id", talk.id)
+                .put("createdAt", talk.createdAt)
+                .put("title", talk.title)
+                .put("answer", talk.answer)
+                .put("tags", JSONArray(talk.tags)))
+        }
+        return prefs.edit().putString("ai_talks", array.toString()).commit()
+    }
+
     fun createPhotoFile(): File = File.createTempFile("memory_", ".jpg", photosDir)
 
     fun finalizePhoto(path: String): String? {
@@ -302,6 +357,16 @@ class VitalityStore(context: Context) {
             .put("readings", exportedReadings)
             .put("reminders", exportedReminders)
             .put("rests", JSONArray(rests()))
+            .put("aiTalks", JSONArray().apply {
+                aiConversations().forEach { talk ->
+                    put(JSONObject()
+                        .put("id", talk.id)
+                        .put("createdAt", talk.createdAt)
+                        .put("title", talk.title)
+                        .put("answer", talk.answer)
+                        .put("tags", JSONArray(talk.tags)))
+                }
+            })
             .toString(2)
     }
 
@@ -357,6 +422,18 @@ class VitalityStore(context: Context) {
             }
             val inputRests = root.optJSONArray("rests") ?: JSONArray()
             val importedRests = List(inputRests.length()) { inputRests.getString(it).take(30) }
+            val inputAiTalks = root.optJSONArray("aiTalks") ?: JSONArray()
+            val importedAiTalks = List(inputAiTalks.length()) { index ->
+                val item = inputAiTalks.getJSONObject(index)
+                val tags = item.optJSONArray("tags") ?: JSONArray()
+                AiConversation(
+                    id = item.optLong("id", System.currentTimeMillis() + index),
+                    createdAt = item.optLong("createdAt", System.currentTimeMillis()),
+                    title = item.optString("title").take(500),
+                    answer = item.optString("answer").take(500_000),
+                    tags = List(tags.length()) { tags.getString(it).take(40) }.filter { it.isNotBlank() }
+                )
+            }.filter { it.title.isNotBlank() && it.answer.isNotBlank() }
 
             val editor = prefs.edit()
                 .putInt("baseline", root.optInt("baseline", 100).coerceIn(0, 100))
@@ -379,6 +456,18 @@ class VitalityStore(context: Context) {
             }
             if (importedRests.isNotEmpty()) {
                 editor.putString("rests", JSONArray(importedRests.distinct()).toString())
+            }
+            if (importedAiTalks.isNotEmpty()) {
+                val array = JSONArray()
+                importedAiTalks.forEach { talk ->
+                    array.put(JSONObject()
+                        .put("id", talk.id)
+                        .put("createdAt", talk.createdAt)
+                        .put("title", talk.title)
+                        .put("answer", talk.answer)
+                        .put("tags", JSONArray(talk.tags)))
+                }
+                editor.putString("ai_talks", array.toString())
             }
 
             val recoveryEnd = root.optLong("recoveryEnd", 0L)
