@@ -4,7 +4,6 @@ import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
@@ -25,8 +24,9 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-@Composable fun HistoryScreen(state: Snapshot) {
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
+@Composable fun HistoryScreen(state: Snapshot, onCollapse: () -> Unit = {}) {
+    val scrollState = rememberAutoCollapseScrollState(onCollapse)
+    Column(Modifier.fillMaxSize().verticalScroll(scrollState).padding(20.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
         GlassPageHeader(title="日记",subtitle="每一次状态与感受都留在这里。",modifier=Modifier.fillMaxWidth())
         GlassCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(20.dp)) {
             Text("近七天",color=Ink,fontWeight=FontWeight.Bold,fontSize=18.sp)

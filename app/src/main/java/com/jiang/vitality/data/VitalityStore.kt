@@ -3,6 +3,7 @@ package com.jiang.vitality.data
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.media.MediaMetadataRetriever
 import android.provider.OpenableColumns
 import android.util.Base64
 import org.json.JSONArray
@@ -181,6 +182,8 @@ class VitalityStore(context: Context) {
 
     fun musicFile(name: String): File = File(musicDir, name)
 
+    fun musicCoverFile(name: String): File? = File(musicDir, "$name.cover.jpg").takeIf { it.isFile }
+
     @Synchronized fun importMusic(uri: Uri): String? = runCatching {
         val name = queryAudioName(uri) ?: "music_${System.currentTimeMillis()}.mp3"
         val safe = name.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().ifEmpty { "music.mp3" }
@@ -192,6 +195,17 @@ class VitalityStore(context: Context) {
             target.delete()
             error("音频为空")
         }
+        runCatching {
+            val retriever = MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(target.absolutePath)
+                retriever.embeddedPicture?.takeIf { it.isNotEmpty() }?.let { bytes ->
+                    File(musicDir, "$safe.cover.jpg").writeBytes(bytes)
+                }
+            } finally {
+                retriever.release()
+            }
+        }
         saveMusicNames((musicNames().filter { it != safe } + safe).distinct())
         safe
     }.getOrNull()
@@ -199,6 +213,7 @@ class VitalityStore(context: Context) {
     @Synchronized fun deleteMusic(name: String) {
         val target = File(musicDir, name)
         if (target.parentFile == musicDir.canonicalFile) target.delete()
+        File(musicDir, "$name.cover.jpg").delete()
         saveMusicNames(musicNames().filter { it != name })
     }
 

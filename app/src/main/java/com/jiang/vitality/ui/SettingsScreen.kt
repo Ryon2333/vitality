@@ -5,7 +5,6 @@ import android.provider.Settings
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -20,7 +19,6 @@ import androidx.compose.ui.unit.sp
 import com.jiang.vitality.data.Reminder
 import com.jiang.vitality.data.Snapshot
 import com.jiang.vitality.reminder.AlarmScheduler
-import com.jiang.vitality.ui.backdrop.LiquidSlider
 import com.jiang.vitality.ui.backdrop.LiquidToggle
 import com.jiang.vitality.ui.backdrop.LocalBackdrop
 import com.kyant.backdrop.backdrops.emptyBackdrop
@@ -31,7 +29,8 @@ import java.time.LocalDate
     onReminders: (List<Reminder>) -> Unit,
     onBaseline: (Int) -> Unit,
     onExportData: (Uri) -> Boolean,
-    onImportData: (Uri) -> String
+    onImportData: (Uri) -> String,
+    onCollapse: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val backdrop = LocalBackdrop.current ?: emptyBackdrop()
@@ -52,7 +51,8 @@ import java.time.LocalDate
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) transferMessage = onImportData(uri)
     }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
+    val scrollState = rememberAutoCollapseScrollState(onCollapse)
+    Column(Modifier.fillMaxSize().verticalScroll(scrollState).padding(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
         GlassPageHeader(title="设置",subtitle="提醒、基线与数据管理。",modifier=Modifier.fillMaxWidth())
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("状态询问",fontSize=18.sp,color=Ink,fontWeight=FontWeight.Bold)
@@ -83,16 +83,13 @@ import java.time.LocalDate
             Text("初始值  ${baseline.toInt()}",color=Ink,fontWeight=FontWeight.Bold)
             Text("仅在没有记录时作为当前状态。",fontSize=12.sp,color=Muted)
             Spacer(Modifier.height(10.dp))
-            LiquidSlider(
-                value = { baseline },
+            GlassVitalitySlider(
+                value = baseline.toInt(),
                 onValueChange = {
-                    baseline = it
-                    onBaseline(it.toInt())
+                    baseline = it.toFloat()
+                    onBaseline(it)
                 },
-                valueRange = 0f..100f,
-                visibilityThreshold = 1f,
-                backdrop = backdrop,
-                accentColor = Blue,
+                valueRange = 0..100,
                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
             )
         } }

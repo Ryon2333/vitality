@@ -90,6 +90,7 @@ class MainActivity : ComponentActivity() {
         val snapshot = state ?: return
         var tab by remember { mutableIntStateOf(0) }
         var navigationCollapsed by remember { mutableStateOf(false) }
+        var soundTherapyDestination by remember { mutableStateOf(SoundTherapyDestination.REST) }
         var showRecoveryCelebration by remember { mutableStateOf(false) }
         var workUnlockStep by remember { mutableIntStateOf(0) }
         var workUnlockPhrase by remember { mutableStateOf("") }
@@ -98,7 +99,7 @@ class MainActivity : ComponentActivity() {
         val bubbleSounds = rememberBubbleSoundPlayer()
         val context = LocalContext.current
         val meditationPlayer = remember { MeditationPlayer(context) }
-        val musicNames = store.musicNames()
+        var musicNames by remember { mutableStateOf(store.musicNames()) }
         val musicTracks = musicNames.map { it to store.musicFile(it) }
         DisposableEffect(Unit) {
             onDispose { meditationPlayer.release() }
@@ -172,39 +173,46 @@ class MainActivity : ComponentActivity() {
                                     refresh()
                                 },
                                 musicNames = musicNames,
+                                musicCoverPath = { store.musicCoverFile(it)?.absolutePath },
                                 currentMusic = meditationPlayer.currentName,
                                 isPlaying = meditationPlayer.isPlaying,
                                 positionMillis = meditationPlayer.positionMillis,
                                 durationMillis = meditationPlayer.durationMillis,
                                 playbackMode = meditationPlayer.mode,
                                 playbackError = meditationPlayer.playbackError,
+                                destination = soundTherapyDestination,
+                                onDestination = { soundTherapyDestination = it },
                                 onImportMusic = { uri ->
                                     store.importMusic(uri)?.let { imported ->
+                                        musicNames = store.musicNames()
                                         refresh()
                                         meditationPlayer.play(
                                             imported,
-                                            store.musicNames().map { it to store.musicFile(it) }
+                                            musicNames.map { it to store.musicFile(it) }
                                         )
                                     }
                                 },
-                                onToggleMusic = { name ->
+                                onPlayMusic = { name ->
                                     if (meditationPlayer.currentName == name) {
-                                        meditationPlayer.toggle()
+                                        if (!meditationPlayer.isPlaying) meditationPlayer.toggle()
                                     } else {
                                         meditationPlayer.play(name, musicTracks)
                                     }
                                 },
+                                onToggleMusic = meditationPlayer::toggle,
                                 onDeleteMusic = { name ->
                                     if (meditationPlayer.currentName == name) meditationPlayer.stop()
                                     store.deleteMusic(name)
+                                    musicNames = store.musicNames()
                                     refresh()
                                 },
                                 onPreviousMusic = meditationPlayer::previous,
                                 onNextMusic = meditationPlayer::next,
                                 onSeekMusic = meditationPlayer::seekTo,
-                                onPlaybackMode = { meditationPlayer.setMode(it, musicTracks) }
+                                onPlaybackMode = { meditationPlayer.setMode(it, musicTracks) },
+                                onCollapse = { navigationCollapsed = true }
                             )
-                            2 -> HistoryScreen(snapshot)
+                            2 -> HistoryScreen(snapshot, onCollapse = { navigationCollapsed = true })
                             else -> SettingsScreen(
                                 snapshot,
                                 onReminders = { updated ->
@@ -237,22 +245,28 @@ class MainActivity : ComponentActivity() {
                                         AlarmScheduler.scheduleAll(this@MainActivity)
                                         "已导入 ${summary.readings} 条记录和 ${summary.photos} 张照片"
                                     }.getOrElse { "导入失败：${it.message ?: "文件内容无效"}" }
-                                }
+                                },
+                                onCollapse = { navigationCollapsed = true }
                             )
                         }
                     }
                 }
                 NowPlayingBubble(
-                    title = meditationPlayer.currentName,
+                    title = meditationPlayer.currentName.takeUnless {
+                        tab == 1 && soundTherapyDestination == SoundTherapyDestination.PLAYER
+                    },
                     playing = meditationPlayer.isPlaying,
                     positionMillis = meditationPlayer.positionMillis,
                     durationMillis = meditationPlayer.durationMillis,
-                    onOpen = { tab = 1; navigationCollapsed = false },
-                    onToggle = meditationPlayer::toggle,
+                    onOpen = {
+                        tab = 1
+                        soundTherapyDestination = SoundTherapyDestination.PLAYER
+                        navigationCollapsed = false
+                    },
                     modifier = Modifier
-                        .align(Alignment.BottomCenter)
+                        .align(Alignment.BottomEnd)
                         .navigationBarsPadding()
-                        .padding(bottom = 92.dp, start = 30.dp, end = 30.dp)
+                        .padding(bottom = 92.dp, end = 22.dp)
                 )
                 JiangLiquidNavigationBar(
                     selectedIndex = tab,
@@ -495,7 +509,11 @@ private fun CheckinDialog(
         },
         actions = {
             GlassActionButton(text = "稍后", onClick = dismissWithCleanup)
-            GlassActionButton(text = "保存", onClick = { onSave(value, note, photoPaths) })
+            RecordStateButton(
+                text = "保存此刻状态",
+                onClick = { onSave(value, note, photoPaths) },
+                modifier = Modifier.widthIn(min = 132.dp)
+            )
         }
     )
 }

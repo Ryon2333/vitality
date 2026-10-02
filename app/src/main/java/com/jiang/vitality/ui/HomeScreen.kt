@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -137,17 +136,12 @@ fun HomeScreen(
                         fontSize = 14.sp
                     )
                     Spacer(Modifier.height(20.dp))
-                    GlassButton(
+                    RecordStateButton(
+                        text = if (state.locked) "状态已锁定" else "记录此刻状态  ＋",
                         onClick = onRecord,
                         enabled = !state.locked,
-                        colors = ButtonDefaults.buttonColors(
-                            disabledContainerColor = RecoveryCoral.copy(alpha = .10f),
-                            disabledContentColor = RecoveryCoral.copy(alpha = .76f)
-                        ),
-                        modifier = Modifier.fillMaxWidth().height(52.dp)
-                    ) {
-                        Text(if (state.locked) "状态已锁定" else "记录此刻状态  ＋")
-                    }
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             }
 
