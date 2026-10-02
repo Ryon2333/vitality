@@ -3,6 +3,7 @@ package com.jiang.vitality.data
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.provider.OpenableColumns
 import android.util.Base64
 import org.json.JSONArray
 import org.json.JSONObject
@@ -40,6 +41,7 @@ class VitalityStore(context: Context) {
     private val appContext = context.applicationContext
     private val prefs = appContext.getSharedPreferences("vitality_v2", Context.MODE_PRIVATE)
     private val photosDir = File(appContext.filesDir, "memories").apply { mkdirs() }
+    private val musicDir = File(appContext.filesDir, "music").apply { mkdirs() }
     private val defaults = listOf("闭眼休息", "拉伸", "散步", "喝水", "深呼吸", "听音乐", "冥想", "远眺")
 
     @Synchronized fun snapshot(now: Long = System.currentTimeMillis()): Snapshot {
@@ -171,6 +173,51 @@ class VitalityStore(context: Context) {
         val target = File(path).canonicalFile
         if (target.parentFile == photosDir.canonicalFile) target.delete()
     }
+
+    fun musicNames(): List<String> = try {
+        val arr = JSONArray(prefs.getString("music_files", "[]"))
+        List(arr.length()) { arr.getString(it) }
+    } catch (_: Exception) { emptyList() }
+
+    fun musicFile(name: String): File = File(musicDir, name)
+
+    @Synchronized fun importMusic(uri: Uri): String? = runCatching {
+        val name = queryAudioName(uri) ?: "music_${System.currentTimeMillis()}.mp3"
+        val safe = name.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().ifEmpty { "music.mp3" }
+        val target = File(musicDir, safe)
+        appContext.contentResolver.openInputStream(uri)?.use { input ->
+            target.outputStream().use(input::copyTo)
+        } ?: error("无法读取音频")
+        if (target.length() == 0L) {
+            target.delete()
+            error("音频为空")
+        }
+        saveMusicNames((musicNames().filter { it != safe } + safe).distinct())
+        safe
+    }.getOrNull()
+
+    @Synchronized fun deleteMusic(name: String) {
+        val target = File(musicDir, name)
+        if (target.parentFile == musicDir.canonicalFile) target.delete()
+        saveMusicNames(musicNames().filter { it != name })
+    }
+
+    private fun saveMusicNames(names: List<String>) {
+        val arr = JSONArray()
+        names.forEach { arr.put(it) }
+        prefs.edit().putString("music_files", arr.toString()).commit()
+    }
+
+    private fun queryAudioName(uri: Uri): String? = runCatching {
+        var name: String? = null
+        appContext.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (index >= 0) name = cursor.getString(index)
+            }
+        }
+        name
+    }.getOrNull()
 
     @Synchronized fun exportData(): String {
         val exportedReadings = JSONArray()

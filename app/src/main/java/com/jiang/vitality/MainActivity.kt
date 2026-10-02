@@ -91,6 +91,11 @@ class MainActivity : ComponentActivity() {
         var workUnlockPhrase by remember { mutableStateOf("") }
         val hazeState = rememberHazeState()
         val bubbleSounds = rememberBubbleSoundPlayer()
+        val context = LocalContext.current
+        val meditationPlayer = remember { MeditationPlayer(context) }
+        DisposableEffect(Unit) {
+            onDispose { meditationPlayer.release() }
+        }
 
         LaunchedEffect(Unit) {
             while (true) {
@@ -143,9 +148,27 @@ class MainActivity : ComponentActivity() {
                                 onCollapse = { navigationCollapsed = true }
                             )
                             1 -> RestScreen(
-                                snapshot.rests,
+                                rests = snapshot.rests,
                                 onSave = {
                                     store.saveRests(it)
+                                    refresh()
+                                },
+                                musicNames = store.musicNames(),
+                                currentMusic = meditationPlayer.currentName,
+                                isPlaying = meditationPlayer.isPlaying,
+                                onImportMusic = { uri ->
+                                    if (store.importMusic(uri) != null) refresh()
+                                },
+                                onToggleMusic = { name ->
+                                    if (meditationPlayer.currentName == name) {
+                                        meditationPlayer.toggle()
+                                    } else {
+                                        meditationPlayer.play(store.musicFile(name), name)
+                                    }
+                                },
+                                onDeleteMusic = { name ->
+                                    if (meditationPlayer.currentName == name) meditationPlayer.stop()
+                                    store.deleteMusic(name)
                                     refresh()
                                 }
                             )

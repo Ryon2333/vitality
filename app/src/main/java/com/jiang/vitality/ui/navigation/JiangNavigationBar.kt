@@ -3,13 +3,11 @@ package com.jiang.vitality.ui.navigation
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -17,9 +15,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.lerp
 import com.jiang.vitality.ui.rememberFlowingColorPhase
+import kotlin.math.roundToInt
 
 /**
  * 液态玻璃导航栏入口。完整导航栏与右下角小气泡是**同一个**玻璃物体：
@@ -35,34 +36,45 @@ fun JiangLiquidNavigationBar(
     onExpand: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    BoxWithConstraints(modifier = modifier.height(88.dp)) {
+    Box(modifier = modifier.height(88.dp)) {
         val morph = remember { Animatable(if (collapsed) 0f else 1f) }
         LaunchedEffect(collapsed) {
             morph.animateTo(if (collapsed) 0f else 1f, navigationMorphSpec)
         }
-        val p = morph.value
-        val sheenPhase = rememberFlowingColorPhase(periodSeconds = 7f).value
+        val sheenPhase = rememberFlowingColorPhase(periodSeconds = 7f)
+        val density = LocalDensity.current
 
         val bubbleSize = 62.dp
-        val width = lerp(bubbleSize, maxWidth, p)
-        val height = lerp(bubbleSize, 88.dp, p)
-        // 气泡阶段圆角 = 半宽（圆形），拉长后圆角封顶 34dp，形成胶囊 → 圆角条的液态形变。
-        val corner = minOf(width / 2f, 34.dp)
-        val shape = RoundedCornerShape(corner)
+        val expandedHeight = 88.dp
+        val shape = remember { RoundedCornerShape(34.dp) }
+        val cornerPx = with(density) { 34.dp.toPx() }
 
         LiquidGlassShell(
             shape = shape,
-            sheenPhase = sheenPhase,
+            cornerRadiusPx = cornerPx,
+            sheenPhase = { sheenPhase.value },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .width(width)
-                .height(height)
+                .layout { measurable, constraints ->
+                    // Read the animation in measurement, not composition. Only this glass
+                    // object is remeasured while morphing; its content is not recomposed.
+                    val progress = morph.value.coerceIn(0f, 1f)
+                    val bubblePx = bubbleSize.roundToPx()
+                    val expandedHeightPx = expandedHeight.roundToPx()
+                    val widthPx = (bubblePx + (constraints.maxWidth - bubblePx) * progress)
+                        .roundToInt()
+                        .coerceIn(bubblePx, constraints.maxWidth)
+                    val heightPx = (bubblePx + (expandedHeightPx - bubblePx) * progress)
+                        .roundToInt()
+                    val placeable = measurable.measure(Constraints.fixed(widthPx, heightPx))
+                    layout(widthPx, heightPx) { placeable.placeRelative(0, 0) }
+                }
         ) {
             // 导航栏内容（随 morph 进度淡入）。
             Box(
                 Modifier
                     .matchParentSize()
-                    .graphicsLayer { alpha = p }
+                    .graphicsLayer { alpha = morph.value }
             ) {
                 LiquidLightSource(
                     selectedIndex = selectedIndex,
@@ -93,7 +105,7 @@ fun JiangLiquidNavigationBar(
             Box(
                 Modifier
                     .matchParentSize()
-                    .graphicsLayer { alpha = 1f - p }
+                    .graphicsLayer { alpha = 1f - morph.value }
                     .then(if (collapsed) Modifier.clickable(onClick = onExpand) else Modifier),
                 contentAlignment = Alignment.Center
             ) {

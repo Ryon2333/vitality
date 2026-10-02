@@ -25,8 +25,9 @@ import kotlin.math.hypot
 import kotlin.math.sin
 import kotlin.random.Random
 
-// A full display-frame cadence keeps motion continuous.
-private const val GeometryFrameIntervalNanos = 16_000_000L
+// The large river moves slowly enough that 30 Hz remains visually continuous while
+// leaving the 60/120 Hz UI thread budget to touch, scrolling and glass interactions.
+private const val GeometryFrameIntervalNanos = 32_000_000L
 
 // The single travelling shape morphs between a rounded square (4) and a dodecagon (12).
 private const val MinSides = 4
@@ -142,12 +143,9 @@ fun DynamicGeometryBackground(
         }
     }
     val riverBodies = remember {
+        // One screen-scale river. Its body is always present; the current moves inside it.
         listOf(
-            RiverBody(progress = -.40f, speedScale = 1.00f, lane = 0f,     width = .30f, alpha = .12f, tintIndex = 3, phase = 1.2f),
-            RiverBody(progress = -.18f, speedScale = .95f,  lane = 0f,     width = .22f, alpha = .26f, tintIndex = 0, phase = 2.4f),
-            RiverBody(progress = .05f,  speedScale = .90f,  lane = -.025f, width = .13f, alpha = .28f, tintIndex = 1, phase = 4.0f),
-            RiverBody(progress = .22f,  speedScale = 1.05f, lane = .025f,  width = .08f, alpha = .32f, tintIndex = 2, phase = 5.3f),
-            RiverBody(progress = -.05f, speedScale = .85f,  lane = .010f,  width = .045f, alpha = .42f, tintIndex = 0, phase = 0.6f)
+            RiverBody(progress = 0f, speedScale = .72f, lane = 0f, width = .88f, alpha = .37f, tintIndex = 0, phase = 1.0f)
         )
     }
     val frameTick = remember { mutableLongStateOf(0L) }
@@ -229,8 +227,8 @@ fun DynamicGeometryBackground(
                     body.alpha += (body.targetAlpha - body.alpha) * dt * .16f
                 }
                 riverBodies.forEach { river ->
-                    river.progress += mood.flowSpeed * river.speedScale * dt
-                    river.phase += dt * .20f
+                    river.progress += (.035f + mood.flowSpeed * river.speedScale) * dt
+                    river.phase += dt * .10f
                     if (river.progress > 1.28f) river.progress = -.28f
                 }
                 frameTick.longValue++
@@ -263,42 +261,100 @@ private fun DrawScope.drawRiverBody(
     tint: Color,
     moodOpacity: Float
 ) {
-    val segmentHalfLength = .22f
-    val startT = river.progress - segmentHalfLength
-    val endT = river.progress + segmentHalfLength
-    val path = Path()
-    var firstPoint = Offset.Zero
-    var lastPoint = Offset.Zero
-    repeat(17) { sample ->
-        val t = startT + (endT - startT) * sample / 16f
-        val point = riverPoint(t, river.lane, river.phase, size.width, size.height)
-        if (sample == 0) {
-            path.moveTo(point.x, point.y)
-            firstPoint = point
-        } else {
-            path.lineTo(point.x, point.y)
-        }
-        lastPoint = point
-    }
+    val startT = -.30f
+    val endT = 1.30f
+    val stablePhase = 1f
+    val firstPoint = riverPoint(startT, river.lane, stablePhase, size.width, size.height)
+    val lastPoint = riverPoint(endT, river.lane, stablePhase, size.width, size.height)
+    val riverWidth = size.minDimension * river.width
+    val halfLane = riverWidth / size.height / 2f
+    val outerRiver = riverRibbonPath(
+        startT, endT, river.lane, stablePhase, halfLane * 1.10f, samples = 25
+    )
+    val riverPath = riverRibbonPath(
+        startT, endT, river.lane, stablePhase, halfLane, samples = 25
+    )
+    val alpha = river.alpha * moodOpacity
+
+    // Filled ribbons are substantially cheaper than a near-screen-width stroked path.
     drawPath(
-        path = path,
+        path = outerRiver,
         brush = Brush.linearGradient(
             colors = listOf(
                 Color.Transparent,
-                tint.copy(alpha = river.alpha * moodOpacity),
-                Color.White.copy(alpha = river.alpha * moodOpacity * .58f),
-                tint.copy(alpha = river.alpha * moodOpacity * .82f),
+                tint.copy(alpha = alpha * .26f),
+                tint.copy(alpha = alpha * .34f),
                 Color.Transparent
             ),
             start = firstPoint,
             end = lastPoint
-        ),
-        style = Stroke(
-            width = size.minDimension * river.width,
-            cap = androidx.compose.ui.graphics.StrokeCap.Round,
-            join = androidx.compose.ui.graphics.StrokeJoin.Round
         )
     )
+
+    drawPath(
+        path = riverPath,
+        brush = Brush.linearGradient(
+            colors = listOf(
+                Color.Transparent,
+                tint.copy(alpha = alpha * .70f),
+                Color.White.copy(alpha = alpha * .42f),
+                tint.copy(alpha = alpha * .84f),
+                Color.Transparent
+            ),
+            start = firstPoint,
+            end = lastPoint
+        )
+    )
+
+    // Three soft caustics travel inside the river. Radial pools are much cheaper than
+    // dashed full-screen paths and read as light moving over a deep sheet of water.
+    repeat(3) { index ->
+        val period = endT - startT
+        val currentT = startT + ((river.progress - startT + index * period / 3f) % period)
+        val currentLane = river.lane + (index - 1f) * .07f
+        val currentCenter = riverPoint(
+            currentT,
+            currentLane,
+            stablePhase + index * .08f,
+            size.width,
+            size.height
+        )
+        val lightRadius = riverWidth * (.20f + index * .025f)
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    Color.White.copy(alpha = alpha * .36f),
+                    tint.copy(alpha = alpha * .24f),
+                    Color.Transparent
+                ),
+                center = currentCenter,
+                radius = lightRadius
+            ),
+            radius = lightRadius,
+            center = currentCenter
+        )
+    }
+}
+
+private fun DrawScope.riverRibbonPath(
+    startT: Float,
+    endT: Float,
+    lane: Float,
+    phase: Float,
+    halfLane: Float,
+    samples: Int
+): Path = Path().apply {
+    repeat(samples) { sample ->
+        val t = startT + (endT - startT) * sample / (samples - 1).coerceAtLeast(1).toFloat()
+        val point = riverPoint(t, lane - halfLane, phase, size.width, size.height)
+        if (sample == 0) moveTo(point.x, point.y) else lineTo(point.x, point.y)
+    }
+    for (sample in samples - 1 downTo 0) {
+        val t = startT + (endT - startT) * sample / (samples - 1).coerceAtLeast(1).toFloat()
+        val point = riverPoint(t, lane + halfLane, phase, size.width, size.height)
+        lineTo(point.x, point.y)
+    }
+    close()
 }
 
 private fun riverPoint(

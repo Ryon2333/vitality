@@ -1,5 +1,8 @@
 package com.jiang.vitality.ui
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,13 +23,27 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @Composable
-fun RestScreen(rests: List<String>, onSave: (List<String>) -> Unit) {
+fun RestScreen(
+    rests: List<String>,
+    onSave: (List<String>) -> Unit,
+    musicNames: List<String>,
+    currentMusic: String?,
+    isPlaying: Boolean,
+    onImportMusic: (Uri) -> Unit,
+    onToggleMusic: (String) -> Unit,
+    onDeleteMusic: (String) -> Unit
+) {
     var showAdd by remember { mutableStateOf(false) }
     var newItem by remember { mutableStateOf("") }
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> if (uri != null) onImportMusic(uri) }
+
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -52,7 +69,42 @@ fun RestScreen(rests: List<String>, onSave: (List<String>) -> Unit) {
                 GlassOutlinedButton(onClick = { showAdd = true }, modifier = Modifier.fillMaxWidth()) { Text("＋ 添加休息方式") }
             }
         }
+        GlassCard(Modifier.fillMaxWidth()) {
+            Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("冥想音乐", color = Ink, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                Text("导入喜欢的音乐，休息时循环播放。", color = Muted, fontSize = 12.sp)
+                GlassOutlinedButton(
+                    onClick = { importLauncher.launch(arrayOf("audio/*")) },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("＋ 导入音乐") }
+                if (musicNames.isEmpty()) {
+                    Text("还没有音乐，点上面导入。", color = Muted, fontSize = 12.sp)
+                } else {
+                    musicNames.forEach { name ->
+                        val active = currentMusic == name
+                        val playing = active && isPlaying
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    name,
+                                    color = if (active) Blue else Ink,
+                                    fontSize = 14.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                if (active) {
+                                    Text(if (playing) "播放中" else "已暂停", color = Muted, fontSize = 11.sp)
+                                }
+                            }
+                            TextButton(onClick = { onToggleMusic(name) }) { Text(if (playing) "暂停" else "播放") }
+                            TextButton(onClick = { onDeleteMusic(name) }) { Text("删除") }
+                        }
+                    }
+                }
+            }
+        }
     }
+
     if (showAdd) AlertDialog(
         onDismissRequest = { showAdd = false },
         shape = GlassDialogShape,
