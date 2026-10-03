@@ -43,6 +43,8 @@ private class GeometryBody(
     y: Float,
     random: Random
 ) {
+    val drawPath = Path()
+    val drawPoints = Array(MaxSides) { Offset.Zero }
     var sides = sides
         private set
     var previousSides = sides
@@ -95,6 +97,10 @@ private class RiverBody(
     var innerPath = Path()
     var firstPoint = Offset.Zero
     var lastPoint = Offset.Zero
+    var cachedTint = Color.Unspecified
+    var cachedAlpha = Float.NaN
+    var outerBrush: Brush? = null
+    var innerBrush: Brush? = null
 }
 
 private class GeometryPaintCache {
@@ -547,13 +553,13 @@ private fun DrawScope.drawRiverBody(
         river.innerPath = riverRibbonPath(
             startT, endT, river.lane, stablePhase, halfLane, samples = 25
         )
+        river.cachedTint = Color.Unspecified
     }
     val alpha = river.alpha * moodOpacity
-
-    // Filled ribbons are substantially cheaper than a near-screen-width stroked path.
-    drawPath(
-        path = river.outerPath,
-        brush = Brush.linearGradient(
+    if (river.cachedTint != tint || river.cachedAlpha != alpha) {
+        river.cachedTint = tint
+        river.cachedAlpha = alpha
+        river.outerBrush = Brush.linearGradient(
             colors = listOf(
                 Color.Transparent,
                 tint.copy(alpha = alpha * .26f),
@@ -563,11 +569,7 @@ private fun DrawScope.drawRiverBody(
             start = river.firstPoint,
             end = river.lastPoint
         )
-    )
-
-    drawPath(
-        path = river.innerPath,
-        brush = Brush.linearGradient(
+        river.innerBrush = Brush.linearGradient(
             colors = listOf(
                 Color.Transparent,
                 tint.copy(alpha = alpha * .70f),
@@ -578,6 +580,17 @@ private fun DrawScope.drawRiverBody(
             start = river.firstPoint,
             end = river.lastPoint
         )
+    }
+
+    // Filled ribbons are substantially cheaper than a near-screen-width stroked path.
+    drawPath(
+        path = river.outerPath,
+        brush = river.outerBrush!!
+    )
+
+    drawPath(
+        path = river.innerPath,
+        brush = river.innerBrush!!
     )
 
     // Three soft caustics travel inside the river. Radial pools are much cheaper than
@@ -672,48 +685,42 @@ private fun DrawScope.drawRoundedPolygon(
         end = center + Offset(radius, radius)
     )
     val edge = Color.White.copy(alpha = alpha * .60f)
-    val path = polygonPath(center, radius, body.aspect, sides, body.rotation, rounding = .28f, irregularity = 0f)
+    val path = updateRoundedPolygonPath(
+        path = body.drawPath,
+        points = body.drawPoints,
+        center = center,
+        radius = radius,
+        aspect = body.aspect,
+        sides = sides,
+        rotation = body.rotation,
+        rounding = .28f
+    )
     drawPath(path, fill)
     drawPath(path, edge, style = Stroke(1.dp.toPx()))
 }
 
-private fun polygonPath(
+private fun updateRoundedPolygonPath(
+    path: Path,
+    points: Array<Offset>,
     center: Offset,
     radius: Float,
     aspect: Float,
     sides: Int,
     rotation: Float,
-    rounding: Float,
-    irregularity: Float,
-    alternate: Float = 1f
-): Path = roundedPath(
-    polygonPoints(center, radius, aspect, sides, rotation, irregularity, alternate),
-    rounding
-)
-
-private fun polygonPoints(
-    center: Offset,
-    radius: Float,
-    aspect: Float,
-    sides: Int,
-    rotation: Float,
-    irregularity: Float,
-    alternate: Float
-): List<Offset> = List(sides) { index ->
-    val angle = Math.toRadians((rotation - 90f + index * 360f / sides).toDouble())
-    val irregular = 1f + irregularity * (((index * 37) % 9) / 8f - .5f)
-    val alternating = if (index % 2 == 1) alternate else 1f
-    Offset(
-        center.x + cos(angle).toFloat() * radius * irregular * alternating,
-        center.y + sin(angle).toFloat() * radius * aspect * irregular * alternating
-    )
-}
-
-private fun roundedPath(points: List<Offset>, rounding: Float): Path {
-    val path = Path()
-    points.forEachIndexed { index, point ->
-        val previous = points[(index - 1 + points.size) % points.size]
-        val next = points[(index + 1) % points.size]
+    rounding: Float
+): Path {
+    repeat(sides) { index ->
+        val angle = Math.toRadians((rotation - 90f + index * 360f / sides).toDouble())
+        points[index] = Offset(
+            center.x + cos(angle).toFloat() * radius,
+            center.y + sin(angle).toFloat() * radius * aspect
+        )
+    }
+    path.reset()
+    repeat(sides) { index ->
+        val point = points[index]
+        val previous = points[(index - 1 + sides) % sides]
+        val next = points[(index + 1) % sides]
         val start = point.toward(previous, rounding)
         val end = point.toward(next, rounding)
         if (index == 0) path.moveTo(start.x, start.y) else path.lineTo(start.x, start.y)

@@ -39,6 +39,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
@@ -247,28 +248,28 @@ fun GlassBackdropSource(
     recoveryMode: Boolean,
     modifier: Modifier = Modifier
 ) {
-    Canvas(modifier) {
+    Box(modifier.drawWithCache {
         val cool = if (recoveryMode) Color(0xFFE9C8B5) else Color(0xFFBCD0EF)
         val pale = if (recoveryMode) Color(0xFFF5DED0) else Color(0xFFD9DFF2)
-        drawCircle(
-            brush = Brush.radialGradient(
-                listOf(cool.copy(alpha = .22f), Color.Transparent),
-                center = androidx.compose.ui.geometry.Offset(size.width * .18f, size.height * .20f),
-                radius = size.minDimension * .54f
-            ),
-            radius = size.minDimension * .54f,
-            center = androidx.compose.ui.geometry.Offset(size.width * .18f, size.height * .20f)
+        val coolCenter = androidx.compose.ui.geometry.Offset(size.width * .18f, size.height * .20f)
+        val coolRadius = size.minDimension * .54f
+        val coolBrush = Brush.radialGradient(
+            listOf(cool.copy(alpha = .22f), Color.Transparent),
+            center = coolCenter,
+            radius = coolRadius
         )
-        drawCircle(
-            brush = Brush.radialGradient(
-                listOf(pale.copy(alpha = .24f), Color.Transparent),
-                center = androidx.compose.ui.geometry.Offset(size.width * .84f, size.height * .74f),
-                radius = size.minDimension * .62f
-            ),
-            radius = size.minDimension * .62f,
-            center = androidx.compose.ui.geometry.Offset(size.width * .84f, size.height * .74f)
+        val paleCenter = androidx.compose.ui.geometry.Offset(size.width * .84f, size.height * .74f)
+        val paleRadius = size.minDimension * .62f
+        val paleBrush = Brush.radialGradient(
+            listOf(pale.copy(alpha = .24f), Color.Transparent),
+            center = paleCenter,
+            radius = paleRadius
         )
-    }
+        onDrawBehind {
+            drawCircle(coolBrush, coolRadius, coolCenter)
+            drawCircle(paleBrush, paleRadius, paleCenter)
+        }
+    })
 }
 
 @Composable
@@ -531,7 +532,7 @@ fun GlassButton(
                     effects = {
                         vibrancy()
                         blur(2.dp.toPx())
-                        lens(12.dp.toPx(), 20.dp.toPx(), depthEffect = true, chromaticAberration = true)
+                        lens(12.dp.toPx(), 20.dp.toPx(), depthEffect = true, chromaticAberration = false)
                     },
                     highlight = {
                         Highlight.Default.copy(
@@ -684,7 +685,7 @@ fun GlassOutlinedButton(
                     effects = {
                         vibrancy()
                         blur(2.dp.toPx())
-                        lens(8.dp.toPx(), 14.dp.toPx(), depthEffect = true, chromaticAberration = true)
+                        lens(8.dp.toPx(), 14.dp.toPx(), depthEffect = true, chromaticAberration = false)
                     },
                     highlight = {
                         Highlight.Default.copy(
