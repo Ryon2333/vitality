@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 private const val HoldDurationMillis = 3_000L
 
@@ -65,7 +66,14 @@ fun HoldToCallItADayButton(
         label = "call it a day press"
     )
     val colorPhase = rememberFlowingColorPhase(periodSeconds = 5.8f)
-    val palette = if (recoveryMode) CallItADayFlowPalette else DayFlowPalette
+    val liveAccent = Blue
+    val palette = if (recoveryMode) CallItADayFlowPalette else listOf(
+        liveAccent,
+        androidx.compose.ui.graphics.lerp(liveAccent, Color.White, .16f),
+        androidx.compose.ui.graphics.lerp(liveAccent, Color(0xFFC3B8F8), .25f),
+        androidx.compose.ui.graphics.lerp(liveAccent, Color.White, .08f),
+        liveAccent
+    )
 
     DisposableEffect(vibrator) {
         onDispose { if (!keepConfirmationPulse.value) vibrator.cancel() }
@@ -93,8 +101,7 @@ fun HoldToCallItADayButton(
                         vibrator.startRisingVibration()
 
                         coroutineScope {
-                            var confirmed = false
-                            val confirmationJob = launch {
+                            val progressJob = launch {
                                 progress.animateTo(
                                     targetValue = 1f,
                                     animationSpec = tween(
@@ -102,16 +109,22 @@ fun HoldToCallItADayButton(
                                         easing = LinearEasing
                                     )
                                 )
-                                confirmed = true
+                            }
+                            val releasedBeforeTimeout = withTimeoutOrNull(HoldDurationMillis) {
+                                tryAwaitRelease()
+                                true
+                            }
+                            if (releasedBeforeTimeout == null) {
+                                progressJob.join()
                                 pressed = false
                                 vibrator.cancel()
                                 keepConfirmationPulse.value = true
                                 vibrator.vibrate(VibrationEffect.createOneShot(1_000L, 255))
+                                // Completion owns the gesture: enter recovery immediately even
+                                // while the finger is still down. The later release cannot roll it back.
                                 onConfirmed()
-                            }
-                            tryAwaitRelease()
-                            if (!confirmed) {
-                                confirmationJob.cancel()
+                            } else {
+                                progressJob.cancel()
                                 pressed = false
                                 vibrator.cancel()
                                 progress.animateTo(

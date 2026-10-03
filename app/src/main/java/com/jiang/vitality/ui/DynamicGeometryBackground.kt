@@ -1,8 +1,11 @@
 package com.jiang.vitality.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameNanos
@@ -13,6 +16,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -107,6 +111,10 @@ fun DynamicGeometryBackground(
     recoveryMode: Boolean,
     modifier: Modifier = Modifier
 ) {
+    if (recoveryMode) {
+        OceanSunsetBackground(modifier)
+        return
+    }
     val lifecycleOwner = LocalLifecycleOwner.current
     val mood = remember(vitality, recoveryMode) {
         val base = when (vitality) {
@@ -236,10 +244,28 @@ fun DynamicGeometryBackground(
         }
     }
 
+    val vitalityAccent by animateColorAsState(
+        targetValue = vitalityColor(vitality),
+        animationSpec = tween(1_400),
+        label = "vitality-background-color"
+    )
     Canvas(modifier) {
         frameTick.longValue
-        drawRect(if (recoveryMode) Color(0xFFFFF0DE) else Color(0xFFF0F3F8))
-        val palette = if (recoveryMode) RecoveryTints else DayTints
+        drawRect(
+            Brush.verticalGradient(
+                listOf(
+                    Color(0xFFF0F3F8),
+                    lerp(Color(0xFFF0F3F8), vitalityAccent, .13f),
+                    lerp(Color(0xFFF0F3F8), vitalityAccent, .07f)
+                )
+            )
+        )
+        val palette = listOf(
+            lerp(vitalityAccent, Color.White, .38f),
+            lerp(vitalityAccent, Color(0xFFC3B8F8), .46f),
+            lerp(vitalityAccent, Color(0xFFF0F3F8), .62f),
+            lerp(vitalityAccent, Color(0xFFFE9D7B), .60f)
+        )
         riverBodies.forEach { river ->
             drawRiverBody(river, palette[river.tintIndex], mood.opacity)
         }
@@ -253,6 +279,109 @@ fun DynamicGeometryBackground(
                 drawRoundedPolygon(body.sides, body, palette[body.tintIndex], baseAlpha * progress)
             }
         }
+    }
+}
+
+private fun vitalityColor(value: Int): Color {
+    val stops = listOf(
+        Color(0xFF750C26),
+        Color(0xFFFE9D7B),
+        Color(0xFFC3B8F8),
+        Color(0xFF8EB7F5),
+        Color(0xFF144BB0)
+    )
+    val scaled = value.coerceIn(0, 100) / 25f
+    val index = scaled.toInt().coerceIn(0, stops.lastIndex - 1)
+    return lerp(stops[index], stops[index + 1], scaled - index)
+}
+
+@Composable
+private fun OceanSunsetBackground(modifier: Modifier = Modifier) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val clock = remember { mutableLongStateOf(0L) }
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            var previous = 0L
+            while (isActive) {
+                val frame = withFrameNanos { it }
+                if (previous == 0L || frame - previous >= GeometryFrameIntervalNanos) {
+                    previous = frame
+                    clock.longValue = frame
+                }
+            }
+        }
+    }
+    Canvas(modifier) {
+        val seconds = clock.longValue / 1_000_000_000f
+        val horizon = size.height * .46f
+        drawRect(
+            Brush.verticalGradient(
+                0f to Color(0xFF7E3D48),
+                .28f to Color(0xFFEC6D4A),
+                .46f to Color(0xFFFA9C3A),
+                .47f to Color(0xFF356D91),
+                1f to Color(0xFF173F61)
+            )
+        )
+        val sunCenter = Offset(size.width * .72f, horizon - size.minDimension * .085f)
+        val sunRadius = size.minDimension * .092f
+        drawCircle(
+            Brush.radialGradient(
+                listOf(Color(0xFFFFF4CC), Color(0xFFFFC368).copy(.88f), Color.Transparent),
+                sunCenter,
+                sunRadius * 2.4f
+            ),
+            sunRadius * 2.4f,
+            sunCenter
+        )
+        drawCircle(Color(0xFFFFE1A0).copy(.94f), sunRadius, sunCenter)
+
+        // Broad moving water masses make the lower half read as an ocean rather than
+        // a stack of decorative sine lines.
+        repeat(7) { layer ->
+            val baseY = horizon + layer * size.height * .078f
+            val amplitude = size.height * (.008f + layer * .0015f)
+            val path = Path()
+            val samples = 34
+            repeat(samples) { index ->
+                val x = size.width * index / (samples - 1f)
+                val wave = sin(index * .66f + seconds * (.26f + layer * .025f) + layer * 1.31f) * amplitude
+                val secondary = sin(index * .21f - seconds * .17f + layer) * amplitude * .42f
+                val y = baseY + wave + secondary
+                if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
+            path.lineTo(size.width, size.height)
+            path.lineTo(0f, size.height)
+            path.close()
+            drawPath(
+                path,
+                Brush.verticalGradient(
+                    listOf(
+                        Color(0xFF6E91A5).copy(alpha = .14f + layer * .018f),
+                        Color(0xFF245880).copy(alpha = .10f + layer * .025f)
+                    ),
+                    startY = baseY - amplitude,
+                    endY = size.height
+                )
+            )
+        }
+
+        // Broken sunset reflection follows the waves and drifts at a different rate.
+        repeat(8) { row ->
+            val y = horizon + size.height * (.025f + row * .052f)
+            val width = size.width * (.22f - row * .016f).coerceAtLeast(.06f)
+            val centerX = sunCenter.x + sin(seconds * .22f + row * 1.7f) * size.width * .025f
+            val reflection = Path().apply {
+                moveTo(centerX - width, y)
+                quadraticTo(centerX, y + sin(seconds * .31f + row) * 7.dp.toPx(), centerX + width, y)
+            }
+            drawPath(
+                reflection,
+                Color(0xFFFFC56F).copy(alpha = (.30f - row * .025f).coerceAtLeast(.07f)),
+                style = Stroke((3.2f - row * .22f).coerceAtLeast(1f).dp.toPx())
+            )
+        }
+        drawLine(Color.White.copy(.32f), Offset(0f, horizon), Offset(size.width, horizon), .75.dp.toPx())
     }
 }
 

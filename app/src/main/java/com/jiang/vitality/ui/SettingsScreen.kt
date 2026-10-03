@@ -30,6 +30,8 @@ import java.time.LocalDate
     onBaseline: (Int) -> Unit,
     onExportData: (Uri) -> Boolean,
     onImportData: (Uri) -> String,
+    demoActive: Boolean,
+    onStartUsing: () -> Boolean,
     onCollapse: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -42,6 +44,7 @@ import java.time.LocalDate
     var timeHour by remember { mutableIntStateOf(16) }
     var timeMinute by remember { mutableIntStateOf(0) }
     var transferMessage by remember { mutableStateOf("") }
+    var confirmStartUsing by remember { mutableStateOf(false) }
     var baseline by remember(state.baseline) { mutableFloatStateOf(state.baseline.toFloat()) }
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -96,7 +99,7 @@ import java.time.LocalDate
         GlassCard(Modifier.fillMaxWidth()) {
             Column(Modifier.fillMaxWidth().padding(20.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
                 Text("数据与迁移",fontSize=18.sp,color=Ink,fontWeight=FontWeight.Bold)
-                Text("备份包含状态、心得、照片、提醒和休息选项。导入会替换当前数据。",fontSize=12.sp,color=Muted)
+                Text("备份包含状态、心得、照片、提醒、AI谈和我评；音乐文件需单独导入。导入会替换当前数据。",fontSize=12.sp,color=Muted)
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
                     GlassOutlinedButton(
                         onClick={
@@ -110,6 +113,17 @@ import java.time.LocalDate
                     ) { Text("导入备份") }
                 }
                 if(transferMessage.isNotBlank()) Text(transferMessage,color=Blue,fontSize=12.sp)
+            }
+        }
+        if (demoActive) {
+            GlassCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("体验模式", fontSize = 18.sp, color = Ink, fontWeight = FontWeight.Bold)
+                    Text("示范记录、AI 对话、影评与音乐用于展示完整功能。准备好后可清除它们。", color = Muted, fontSize = 12.sp, lineHeight = 18.sp)
+                    GlassOutlinedButton({ confirmStartUsing = true }, Modifier.fillMaxWidth()) {
+                        Text("正式开始使用", color = Blue, fontWeight = FontWeight.SemiBold)
+                    }
+                }
             }
         }
         if(!AlarmScheduler.exactAllowed(context)) GlassCard(Modifier.fillMaxWidth()) {
@@ -134,6 +148,18 @@ import java.time.LocalDate
             timeMinute=old?.minute ?: 0
             adding=false;editing=null
         }) })
+
+    if (confirmStartUsing) GlassDialog(
+        onDismissRequest = { confirmStartUsing = false },
+        title = { Text("正式开始使用？") },
+        text = { Text("这会永久删除应用内置的示范记录、示范图片、示范音乐、AI 对话和示范影评。你自己创建或导入的内容不会受到影响。") },
+        actions = {
+            GlassActionButton("再看看", { confirmStartUsing = false })
+            GlassActionButton("清除示范内容", {
+                if (onStartUsing()) confirmStartUsing = false
+            })
+        }
+    )
 
     pendingTimeTitle?.let { title ->
         GlassDialog(

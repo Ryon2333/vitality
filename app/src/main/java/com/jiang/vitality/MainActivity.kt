@@ -12,6 +12,16 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
@@ -101,6 +111,8 @@ class MainActivity : ComponentActivity() {
         val meditationPlayer = remember { MeditationPlayer(context) }
         var musicNames by remember { mutableStateOf(store.musicNames()) }
         var aiTalks by remember { mutableStateOf(store.aiConversations()) }
+        var reviews by remember { mutableStateOf(store.mediaReviews()) }
+        var demoActive by remember { mutableStateOf(store.demoActive()) }
         var recoveryPhotoPath by remember { mutableStateOf<String?>(null) }
         val recoveryCameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { saved ->
             val captured = recoveryPhotoPath
@@ -127,7 +139,7 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        VitalityTheme(recoveryMode = snapshot.locked) {
+        VitalityTheme(recoveryMode = snapshot.locked, vitality = snapshot.value) {
             CompositionLocalProvider(
                 LocalGlassHazeState provides hazeState,
                 LocalBackdrop provides wallpaperBackdrop
@@ -158,7 +170,22 @@ class MainActivity : ComponentActivity() {
                             .fillMaxSize()
                             .padding(padding)
                     ) {
-                        when (tab) {
+                        AnimatedContent(
+                            targetState = tab,
+                            modifier = Modifier.fillMaxSize(),
+                            transitionSpec = {
+                                val direction = if (targetState > initialState) 1 else -1
+                                val motion = spring<Float>(dampingRatio = JiangMotion.SpatialDamping, stiffness = JiangMotion.SpatialStiffness)
+                                (fadeIn(motion) + scaleIn(motion, initialScale = .975f) +
+                                    slideInHorizontally(spring(dampingRatio = JiangMotion.SpatialDamping, stiffness = JiangMotion.SpatialStiffness)) { direction * it / 9 })
+                                    .togetherWith(
+                                        fadeOut(motion) + scaleOut(motion, targetScale = .975f) +
+                                            slideOutHorizontally(spring(dampingRatio = JiangMotion.SpatialDamping, stiffness = JiangMotion.SpatialStiffness)) { -direction * it / 9 }
+                                    ).using(SizeTransform(clip = false))
+                            },
+                            label = "main-page-transition"
+                        ) { page ->
+                        when (page) {
                             0 -> HomeScreen(
                                 snapshot,
                                 onRecord = { checkin = true },
@@ -244,6 +271,18 @@ class MainActivity : ComponentActivity() {
                                     store.deleteAiConversation(id)
                                     aiTalks = store.aiConversations()
                                 },
+                                reviews = reviews,
+                                onSaveReview = { draft ->
+                                    store.saveMediaReview(draft)?.also { reviews = store.mediaReviews() }
+                                },
+                                onDeleteReview = { id ->
+                                    store.deleteMediaReview(id)
+                                    reviews = store.mediaReviews()
+                                },
+                                createPhotoFile = store::createPhotoFile,
+                                finalizePhoto = store::finalizePhoto,
+                                importPhoto = store::importPhoto,
+                                deletePhoto = store::deletePhoto,
                                 onPreviousMusic = meditationPlayer::previous,
                                 onNextMusic = meditationPlayer::next,
                                 onSeekMusic = meditationPlayer::seekTo,
@@ -287,13 +326,28 @@ class MainActivity : ComponentActivity() {
                                         } ?: error("无法读取备份文件")
                                         val summary = store.importData(raw)
                                         aiTalks = store.aiConversations()
+                                        reviews = store.mediaReviews()
                                         refresh()
                                         AlarmScheduler.scheduleAll(this@MainActivity)
                                         "已导入 ${summary.readings} 条记录和 ${summary.photos} 张照片"
                                     }.getOrElse { "导入失败：${it.message ?: "文件内容无效"}" }
                                 },
+                                demoActive = demoActive,
+                                onStartUsing = {
+                                    val cleared = store.clearDemoContent()
+                                    if (cleared) {
+                                        meditationPlayer.stop()
+                                        musicNames = store.musicNames()
+                                        aiTalks = store.aiConversations()
+                                        reviews = store.mediaReviews()
+                                        demoActive = false
+                                        refresh()
+                                    }
+                                    cleared
+                                },
                                 onCollapse = { navigationCollapsed = true }
                             )
+                        }
                         }
                     }
                 }

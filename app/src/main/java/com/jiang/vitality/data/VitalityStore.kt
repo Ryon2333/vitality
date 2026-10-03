@@ -10,6 +10,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -30,6 +32,38 @@ data class AiConversation(
     val answer: String,
     val tags: List<String> = emptyList(),
     val category: String = "未分类",
+    val favorite: Boolean = false
+)
+data class MediaReview(
+    val id: Long,
+    val createdAt: Long,
+    val updatedAt: Long,
+    val kind: String,
+    val title: String,
+    val creator: String = "",
+    val year: String = "",
+    val rating: Int,
+    val status: String,
+    val thoughts: String,
+    val quotes: String = "",
+    val tags: List<String> = emptyList(),
+    val imagePaths: List<String> = emptyList(),
+    val quotePhotoPaths: List<String> = emptyList(),
+    val favorite: Boolean = false
+)
+data class MediaReviewDraft(
+    val id: Long? = null,
+    val kind: String,
+    val title: String,
+    val creator: String,
+    val year: String,
+    val rating: Int,
+    val status: String,
+    val thoughts: String,
+    val quotes: String,
+    val tags: List<String>,
+    val imagePaths: List<String>,
+    val quotePhotoPaths: List<String>,
     val favorite: Boolean = false
 )
 data class Reminder(val id: Int, val title: String, val hour: Int, val minute: Int, val enabled: Boolean = true) {
@@ -53,6 +87,135 @@ class VitalityStore(context: Context) {
     private val photosDir = File(appContext.filesDir, "memories").apply { mkdirs() }
     private val musicDir = File(appContext.filesDir, "music").apply { mkdirs() }
     private val defaults = listOf("闭眼休息", "拉伸", "散步", "喝水", "深呼吸", "听音乐", "冥想", "远眺")
+
+    init { ensureDemoContent() }
+
+    fun demoActive(): Boolean = prefs.getBoolean("demo_active", false)
+
+    @Synchronized private fun ensureDemoContent() {
+        if (prefs.getBoolean("demo_initialized", false)) return
+        val now = System.currentTimeMillis()
+        val demoPhoto = createDemoImage("A QUIET DAY", 0xFF245880.toInt(), 0xFFFA9C3A.toInt())
+        val demoCover = createDemoImage("THE SEA BETWEEN US", 0xFF144BB0.toInt(), 0xFFC3B8F8.toInt())
+        val demoQuote = createDemoImage("我们在浪声里，重新学会安静。", 0xFF750C26.toInt(), 0xFFEC6D4A.toInt())
+        val readingTimes = listOf(now - 86_400_000L, now - 2 * 86_400_000L, now - 5 * 86_400_000L)
+        val demoReadings = listOf(
+            Reading(readingTimes[0], 72, "傍晚散步后，注意力慢慢回来了。", listOf(demoPhoto)),
+            Reading(readingTimes[1], 48, "今天适合把速度放慢，先照顾好状态。"),
+            Reading(readingTimes[2], 86, "完成了最重要的一件事，也留出了休息的时间。")
+        )
+        prefs.edit().putString("readings", readingsJson((readings() + demoReadings).sortedBy { it.time }).toString()).commit()
+
+        val aiId = now - 11_003L
+        saveAiConversations(aiConversations() + AiConversation(
+            id = aiId,
+            createdAt = now - 3_600_000L,
+            title = "怎样判断今天应该继续，还是停下来休息？",
+            answer = "## 先看身体给出的证据\n\n- 注意力是否持续飘走\n- 同一件事是否反复出错\n- 是否已经用意志力顶了很久\n\n如果三个信号同时出现，休息通常比硬撑更有效。",
+            tags = listOf("状态", "休息"),
+            category = "生活",
+            favorite = true
+        ))
+
+        val reviewId = now - 22_007L
+        saveMediaReviews(mediaReviews() + MediaReview(
+            id = reviewId,
+            createdAt = now - 7_200_000L,
+            updatedAt = now - 7_200_000L,
+            kind = "电影",
+            title = "海岸线以外",
+            creator = "示范导演",
+            year = "2026",
+            rating = 9,
+            status = "看过",
+            thoughts = "它没有急着给答案，而是让海浪、停顿和人物的呼吸慢慢构成答案。",
+            quotes = "我们不是停在原地，只是在学习怎样不耗尽自己。",
+            tags = listOf("治愈", "成长", "海洋"),
+            imagePaths = listOf(demoCover),
+            quotePhotoPaths = listOf(demoQuote),
+            favorite = true
+        ))
+
+        val demoMusic = "江 · 海边呼吸（示范）.wav"
+        createDemoWave(File(musicDir, demoMusic))
+        saveMusicNames((musicNames() + demoMusic).distinct())
+        prefs.edit()
+            .putBoolean("demo_initialized", true)
+            .putBoolean("demo_active", true)
+            .putString("demo_reading_times", JSONArray(readingTimes).toString())
+            .putString("demo_ai_ids", JSONArray(listOf(aiId)).toString())
+            .putString("demo_review_ids", JSONArray(listOf(reviewId)).toString())
+            .putString("demo_photo_paths", JSONArray(listOf(demoPhoto, demoCover, demoQuote)).toString())
+            .putString("demo_music_names", JSONArray(listOf(demoMusic)).toString())
+            .commit()
+    }
+
+    @Synchronized fun clearDemoContent(): Boolean {
+        if (!demoActive()) return true
+        val readingTimes = runCatching { JSONArray(prefs.getString("demo_reading_times", "[]")).toLongSet() }.getOrDefault(emptySet())
+        val aiIds = runCatching { JSONArray(prefs.getString("demo_ai_ids", "[]")).toLongSet() }.getOrDefault(emptySet())
+        val reviewIds = runCatching { JSONArray(prefs.getString("demo_review_ids", "[]")).toLongSet() }.getOrDefault(emptySet())
+        val photoPaths = runCatching { JSONArray(prefs.getString("demo_photo_paths", "[]")).toStringList() }.getOrDefault(emptyList())
+        val musicNames = runCatching { JSONArray(prefs.getString("demo_music_names", "[]")).toStringList() }.getOrDefault(emptyList())
+        val editor = prefs.edit()
+            .putString("readings", readingsJson(readings().filterNot { it.time in readingTimes }).toString())
+            .putBoolean("demo_active", false)
+            .remove("demo_reading_times").remove("demo_ai_ids").remove("demo_review_ids")
+            .remove("demo_photo_paths").remove("demo_music_names")
+        val aiArray = JSONArray()
+        aiConversations().filterNot { it.id in aiIds }.forEach { talk ->
+            aiArray.put(JSONObject().put("id", talk.id).put("createdAt", talk.createdAt).put("title", talk.title)
+                .put("answer", talk.answer).put("tags", JSONArray(talk.tags)).put("category", talk.category).put("favorite", talk.favorite))
+        }
+        val reviewArray = JSONArray()
+        mediaReviews().filterNot { it.id in reviewIds }.forEach { reviewArray.put(reviewJson(it, includePaths = true)) }
+        editor.putString("ai_talks", aiArray.toString()).putString("media_reviews", reviewArray.toString())
+        val saved = editor.commit()
+        if (saved) {
+            photoPaths.forEach(::deletePhoto)
+            musicNames.forEach(::deleteMusic)
+        }
+        return saved
+    }
+
+    private fun JSONArray.toLongSet(): Set<Long> = buildSet { for (index in 0 until length()) add(optLong(index)) }
+
+    private fun createDemoImage(label: String, startColor: Int, endColor: Int): String {
+        val target = createPhotoFile()
+        val bitmap = android.graphics.Bitmap.createBitmap(900, 620, android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bitmap)
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        paint.shader = android.graphics.LinearGradient(0f, 0f, 900f, 620f, startColor, endColor, android.graphics.Shader.TileMode.CLAMP)
+        canvas.drawRect(0f, 0f, 900f, 620f, paint)
+        paint.shader = null
+        paint.color = android.graphics.Color.WHITE
+        paint.textAlign = android.graphics.Paint.Align.CENTER
+        paint.textSize = if (label.length > 24) 34f else 52f
+        paint.typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+        canvas.drawText(label, 450f, 330f, paint)
+        FileOutputStream(target).use { bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, it) }
+        bitmap.recycle()
+        return target.absolutePath
+    }
+
+    private fun createDemoWave(target: File) {
+        val sampleRate = 22_050
+        val seconds = 16
+        val samples = sampleRate * seconds
+        val dataSize = samples * 2
+        val buffer = ByteBuffer.allocate(44 + dataSize).order(ByteOrder.LITTLE_ENDIAN)
+        buffer.put("RIFF".toByteArray()).putInt(36 + dataSize).put("WAVE".toByteArray())
+        buffer.put("fmt ".toByteArray()).putInt(16).putShort(1).putShort(1)
+        buffer.putInt(sampleRate).putInt(sampleRate * 2).putShort(2).putShort(16)
+        buffer.put("data".toByteArray()).putInt(dataSize)
+        repeat(samples) { index ->
+            val t = index.toDouble() / sampleRate
+            val envelope = .28 + .12 * kotlin.math.sin(2.0 * Math.PI * .08 * t)
+            val wave = kotlin.math.sin(2.0 * Math.PI * 174.0 * t) * .55 + kotlin.math.sin(2.0 * Math.PI * 261.0 * t) * .18
+            buffer.putShort((wave * envelope * Short.MAX_VALUE).toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort())
+        }
+        target.writeBytes(buffer.array())
+    }
 
     @Synchronized fun snapshot(now: Long = System.currentTimeMillis()): Snapshot {
         finishIfNeeded(now)
@@ -263,6 +426,101 @@ class VitalityStore(context: Context) {
         return prefs.edit().putString("ai_talks", array.toString()).commit()
     }
 
+    fun mediaReviews(): List<MediaReview> = try {
+        val array = JSONArray(prefs.getString("media_reviews", "[]"))
+        List(array.length()) { index -> reviewFromJson(array.getJSONObject(index)) }
+            .sortedByDescending { it.updatedAt }
+    } catch (_: Exception) { emptyList() }
+
+    @Synchronized fun saveMediaReview(draft: MediaReviewDraft): MediaReview? {
+        val cleanTitle = draft.title.trim().take(300)
+        val cleanThoughts = draft.thoughts.trim().take(100_000)
+        if (cleanTitle.isBlank() || cleanThoughts.isBlank()) return null
+        val now = System.currentTimeMillis()
+        val current = mediaReviews()
+        val previous = draft.id?.let { id -> current.firstOrNull { it.id == id } }
+        val saved = MediaReview(
+            id = previous?.id ?: now,
+            createdAt = previous?.createdAt ?: now,
+            updatedAt = now,
+            kind = draft.kind.trim().take(12).ifBlank { "电影" },
+            title = cleanTitle,
+            creator = draft.creator.trim().take(120),
+            year = draft.year.trim().take(12),
+            rating = draft.rating.coerceIn(1, 10),
+            status = draft.status.trim().take(20).ifBlank { "已看" },
+            thoughts = cleanThoughts,
+            quotes = draft.quotes.trim().take(100_000),
+            tags = draft.tags.map { it.trim().removePrefix("#") }.filter { it.isNotBlank() }.distinct().take(20),
+            imagePaths = draft.imagePaths.filter { File(it).isFile }.distinct().take(24),
+            quotePhotoPaths = draft.quotePhotoPaths.filter { File(it).isFile }.distinct().take(24),
+            favorite = draft.favorite
+        )
+        val updated = (current.filterNot { it.id == saved.id } + saved).sortedByDescending { it.updatedAt }.take(3000)
+        val success = saveMediaReviews(updated)
+        if (success && previous != null) {
+            val retained = (saved.imagePaths + saved.quotePhotoPaths).toSet()
+            (previous.imagePaths + previous.quotePhotoPaths).filterNot { it in retained }.forEach(::deletePhoto)
+        }
+        return saved.takeIf { success }
+    }
+
+    @Synchronized fun deleteMediaReview(id: Long): Boolean {
+        val current = mediaReviews()
+        val target = current.firstOrNull { it.id == id } ?: return false
+        val success = saveMediaReviews(current.filterNot { it.id == id })
+        if (success) (target.imagePaths + target.quotePhotoPaths).forEach(::deletePhoto)
+        return success
+    }
+
+    private fun saveMediaReviews(items: List<MediaReview>): Boolean {
+        val array = JSONArray()
+        items.forEach { array.put(reviewJson(it, includePaths = true)) }
+        return prefs.edit().putString("media_reviews", array.toString()).commit()
+    }
+
+    private fun reviewFromJson(item: JSONObject) = MediaReview(
+        id = item.getLong("id"),
+        createdAt = item.optLong("createdAt", item.getLong("id")),
+        updatedAt = item.optLong("updatedAt", item.optLong("createdAt", item.getLong("id"))),
+        kind = item.optString("kind", "电影"),
+        title = item.optString("title"),
+        creator = item.optString("creator"),
+        year = item.optString("year"),
+        rating = item.optInt("rating", 8).coerceIn(1, 10),
+        status = item.optString("status", "已看"),
+        thoughts = item.optString("thoughts"),
+        quotes = item.optString("quotes"),
+        tags = item.optJSONArray("tags").toStringList(),
+        imagePaths = item.optJSONArray("imagePaths").toStringList(),
+        quotePhotoPaths = item.optJSONArray("quotePhotoPaths").toStringList(),
+        favorite = item.optBoolean("favorite", false)
+    )
+
+    private fun reviewJson(item: MediaReview, includePaths: Boolean): JSONObject = JSONObject()
+        .put("id", item.id)
+        .put("createdAt", item.createdAt)
+        .put("updatedAt", item.updatedAt)
+        .put("kind", item.kind)
+        .put("title", item.title)
+        .put("creator", item.creator)
+        .put("year", item.year)
+        .put("rating", item.rating)
+        .put("status", item.status)
+        .put("thoughts", item.thoughts)
+        .put("quotes", item.quotes)
+        .put("tags", JSONArray(item.tags))
+        .put("favorite", item.favorite)
+        .also { json ->
+            if (includePaths) {
+                json.put("imagePaths", JSONArray(item.imagePaths))
+                json.put("quotePhotoPaths", JSONArray(item.quotePhotoPaths))
+            }
+        }
+
+    private fun JSONArray?.toStringList(): List<String> = if (this == null) emptyList() else
+        List(length()) { optString(it) }.filter { it.isNotBlank() }
+
     fun createPhotoFile(): File = File.createTempFile("memory_", ".jpg", photosDir)
 
     fun finalizePhoto(path: String): String? {
@@ -396,7 +654,22 @@ class VitalityStore(context: Context) {
                         .put("favorite", talk.favorite))
                 }
             })
+            .put("reviews", JSONArray().apply {
+                mediaReviews().forEach { review ->
+                    put(reviewJson(review, includePaths = false)
+                        .put("imageData", encodedPhotos(review.imagePaths))
+                        .put("quotePhotoData", encodedPhotos(review.quotePhotoPaths)))
+                }
+            })
             .toString(2)
+    }
+
+    private fun encodedPhotos(paths: List<String>): JSONArray = JSONArray().apply {
+        paths.forEach { path ->
+            File(path).takeIf { it.isFile }?.let { file ->
+                put(Base64.encodeToString(file.readBytes(), Base64.NO_WRAP))
+            }
+        }
     }
 
     @Synchronized fun importData(raw: String): ImportSummary {
@@ -465,6 +738,37 @@ class VitalityStore(context: Context) {
                     favorite = item.optBoolean("favorite", false)
                 )
             }.filter { it.title.isNotBlank() && it.answer.isNotBlank() }
+            val inputReviews = root.optJSONArray("reviews") ?: JSONArray()
+            val importedReviews = List(inputReviews.length()) { index ->
+                val item = inputReviews.getJSONObject(index)
+                fun restorePhotos(key: String): List<String> {
+                    val array = item.optJSONArray(key) ?: return emptyList()
+                    return List(array.length()) { photoIndex ->
+                        val file = createPhotoFile()
+                        file.writeBytes(Base64.decode(array.getString(photoIndex), Base64.DEFAULT))
+                        optimizePhoto(file)
+                        createdPhotos += file.absolutePath
+                        file.absolutePath
+                    }
+                }
+                MediaReview(
+                    id = item.optLong("id", System.currentTimeMillis() + index),
+                    createdAt = item.optLong("createdAt", System.currentTimeMillis()),
+                    updatedAt = item.optLong("updatedAt", item.optLong("createdAt", System.currentTimeMillis())),
+                    kind = item.optString("kind", "电影").take(12),
+                    title = item.optString("title").take(300),
+                    creator = item.optString("creator").take(120),
+                    year = item.optString("year").take(12),
+                    rating = item.optInt("rating", 8).coerceIn(1, 10),
+                    status = item.optString("status", "已看").take(20),
+                    thoughts = item.optString("thoughts").take(100_000),
+                    quotes = item.optString("quotes").take(100_000),
+                    tags = item.optJSONArray("tags").toStringList().take(20),
+                    imagePaths = restorePhotos("imageData"),
+                    quotePhotoPaths = restorePhotos("quotePhotoData"),
+                    favorite = item.optBoolean("favorite", false)
+                )
+            }.filter { it.title.isNotBlank() && it.thoughts.isNotBlank() }
 
             val editor = prefs.edit()
                 .putInt("baseline", root.optInt("baseline", 100).coerceIn(0, 100))
@@ -501,6 +805,11 @@ class VitalityStore(context: Context) {
                         .put("favorite", talk.favorite))
                 }
                 editor.putString("ai_talks", array.toString())
+            }
+            if (importedReviews.isNotEmpty()) {
+                val array = JSONArray()
+                importedReviews.forEach { array.put(reviewJson(it, includePaths = true)) }
+                editor.putString("media_reviews", array.toString())
             }
 
             val recoveryEnd = root.optLong("recoveryEnd", 0L)

@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -29,6 +30,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
@@ -37,6 +39,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
@@ -80,14 +83,20 @@ private data class MemoryStar(
 @Composable
 fun MemoryConstellationScreen(
     readings: List<Reading>,
-    onBack: () -> Unit,
-    onOpenDate: (LocalDate) -> Unit
+    onBack: () -> Unit
 ) {
-    BackHandler(onBack = onBack)
     var range by remember { mutableStateOf(MemoryRange.WEEK) }
     val assembly = remember { Animatable(0f) }
     val rotation = remember { Animatable(0f) }
+    val pageEntrance = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
+    fun requestBack() {
+        scope.launch {
+            pageEntrance.animateTo(0f, tween(260, easing = FastOutSlowInEasing))
+            onBack()
+        }
+    }
+    BackHandler(onBack = ::requestBack)
     val zone = remember { ZoneId.systemDefault() }
     val palette = LocalVitalityColors.current
     val stars = remember(readings, range) { createMemoryStars(readings, range, zone) }
@@ -97,9 +106,13 @@ fun MemoryConstellationScreen(
         }
     }
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
+    var selectedStar by remember { mutableStateOf<MemoryStar?>(null) }
 
     LaunchedEffect(Unit) {
-        assembly.animateTo(1f, spring(dampingRatio = .74f, stiffness = 170f))
+        assembly.animateTo(1f, spring(dampingRatio = .76f, stiffness = 96f))
+    }
+    LaunchedEffect(Unit) {
+        pageEntrance.animateTo(1f, spring(dampingRatio = .78f, stiffness = 240f))
     }
     LaunchedEffect(Unit) {
         val random = Random(0x4A49414E)
@@ -112,11 +125,18 @@ fun MemoryConstellationScreen(
     }
 
     Column(
-        Modifier.fillMaxSize().padding(start = 20.dp, top = 20.dp, end = 20.dp, bottom = 112.dp),
+        Modifier.fillMaxSize()
+            .graphicsLayer {
+                alpha = pageEntrance.value
+                scaleX = .965f + pageEntrance.value * .035f
+                scaleY = .965f + pageEntrance.value * .035f
+                translationY = (1f - pageEntrance.value) * 28.dp.toPx()
+            }
+            .padding(start = 20.dp, top = 20.dp, end = 20.dp, bottom = 112.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            GlassCard(Modifier.size(48.dp).clickable(onClick = onBack), shape = CircleShape) {
+            GlassCard(Modifier.size(48.dp).clickable(onClick = ::requestBack), shape = CircleShape) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     androidx.compose.material3.Text("‹", color = Ink, fontSize = 32.sp)
                 }
@@ -129,10 +149,10 @@ fun MemoryConstellationScreen(
                     text = if (item == range) "● ${item.title}" else item.title,
                     onClick = {
                         if (item != range) scope.launch {
-                            assembly.animateTo(0f, tween(380, easing = FastOutSlowInEasing))
+                            assembly.animateTo(0f, tween(510, easing = FastOutSlowInEasing))
                             range = item
                             assembly.snapTo(0f)
-                            assembly.animateTo(1f, spring(dampingRatio = .70f, stiffness = 155f))
+                            assembly.animateTo(1f, spring(dampingRatio = .74f, stiffness = 88f))
                         }
                     },
                     modifier = Modifier.weight(1f)
@@ -155,7 +175,7 @@ fun MemoryConstellationScreen(
                                 if (hit != null) {
                                     val center = constellationPosition(hit, size, assembly.value, rotation.value)
                                     val hitRadius = hit.radiusDp.dp.toPx() + 14.dp.toPx()
-                                    if ((center - tap).getDistance() <= hitRadius) onOpenDate(hit.date)
+                                    if ((center - tap).getDistance() <= hitRadius) selectedStar = hit
                                 }
                             }
                         }
@@ -170,6 +190,9 @@ fun MemoryConstellationScreen(
                 }
             }
         }
+    }
+    selectedStar?.let { star ->
+        MemoryDetailDialog(star.reading, star.date) { selectedStar = null }
     }
 }
 
@@ -261,8 +284,8 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawConstellation(
             clipPath(clip) {
                 drawImage(
                     image = image,
-                    srcOffset = IntOffset.Zero,
-                    srcSize = IntSize(image.width, image.height),
+                    srcOffset = centeredSquareSource(image).first,
+                    srcSize = centeredSquareSource(image).second,
                     dstOffset = IntOffset((center.x - radius).toInt(), (center.y - radius).toInt()),
                     dstSize = IntSize((radius * 2).toInt(), (radius * 2).toInt()),
                     alpha = alpha
@@ -296,6 +319,57 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawConstellation(
             }
         }
     }
+}
+
+private fun centeredSquareSource(image: ImageBitmap): Pair<IntOffset, IntSize> {
+    val side = minOf(image.width, image.height)
+    return IntOffset((image.width - side) / 2, (image.height - side) / 2) to IntSize(side, side)
+}
+
+@Composable
+private fun MemoryDetailDialog(reading: Reading, date: LocalDate, onDismiss: () -> Unit) {
+    val image = remember(reading.time) {
+        reading.photoPaths.firstOrNull()?.let(::decodeConstellationThumbnail)
+    }
+    GlassDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                androidx.compose.material3.Text(
+                    date.format(DateTimeFormatter.ofPattern("yyyy年M月d日")),
+                    color = Ink,
+                    fontWeight = FontWeight.Bold
+                )
+                androidx.compose.material3.Text(
+                    "状态 ${reading.value} / 100",
+                    color = Blue,
+                    fontSize = 13.sp
+                )
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (image != null) {
+                    androidx.compose.foundation.Image(
+                        bitmap = image,
+                        contentDescription = "记录照片",
+                        modifier = Modifier.fillMaxWidth().height(210.dp)
+                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(24.dp)),
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                    )
+                }
+                androidx.compose.material3.Text(
+                    reading.note.ifBlank { "只记录了此刻的状态。" },
+                    color = Ink,
+                    lineHeight = 22.sp
+                )
+                if (reading.photoPaths.size > 1) {
+                    androidx.compose.material3.Text("另有 ${reading.photoPaths.size - 1} 张照片", color = Muted, fontSize = 12.sp)
+                }
+            }
+        },
+        actions = { GlassActionButton("关闭", onDismiss) }
+    )
 }
 
 private fun constellationPosition(star: MemoryStar, size: Size, assembly: Float, rotationDegrees: Float): Offset {

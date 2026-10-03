@@ -51,11 +51,7 @@ fun HistoryScreen(
     if (showingCollection) {
         MemoryConstellationScreen(
             readings = state.readings,
-            onBack = { showingCollection = false },
-            onOpenDate = { date ->
-                selectedDate = date
-                showingCollection = false
-            }
+            onBack = { showingCollection = false }
         )
         return
     }

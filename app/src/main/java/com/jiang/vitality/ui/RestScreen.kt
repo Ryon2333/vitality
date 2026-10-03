@@ -8,6 +8,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -24,6 +25,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -40,6 +42,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,6 +50,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -59,8 +63,18 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.jiang.vitality.data.AiConversation
+import com.jiang.vitality.data.MediaReview
+import com.jiang.vitality.data.MediaReviewDraft
+import java.io.File
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlin.random.Random
 
-enum class SoundTherapyDestination { REST, LIBRARY, PLAYER, AI_LIBRARY, AI_EDITOR, AI_DETAIL }
+enum class SoundTherapyDestination {
+    REST, LIBRARY, PLAYER, AI_LIBRARY, AI_EDITOR, AI_DETAIL,
+    REVIEW_LIBRARY, REVIEW_EDITOR, REVIEW_DETAIL
+}
 
 @Composable
 fun RestScreen(
@@ -70,6 +84,13 @@ fun RestScreen(
     onSaveAiTalk: (String, String, String, List<String>) -> AiConversation?,
     onUpdateAiTalk: (Long, String, List<String>, Boolean) -> Unit,
     onDeleteAiTalk: (Long) -> Unit,
+    reviews: List<MediaReview>,
+    onSaveReview: (MediaReviewDraft) -> MediaReview?,
+    onDeleteReview: (Long) -> Unit,
+    createPhotoFile: () -> File,
+    finalizePhoto: (String) -> String?,
+    importPhoto: (Uri) -> String?,
+    deletePhoto: (String) -> Unit,
     musicNames: List<String>,
     musicCoverPath: (String) -> String?,
     currentMusic: String?,
@@ -91,6 +112,7 @@ fun RestScreen(
     onCollapse: () -> Unit = {}
 ) {
     var selectedAiTalkId by remember { mutableStateOf<Long?>(null) }
+    var selectedReviewId by remember { mutableStateOf<Long?>(null) }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) onImportMusic(uri)
     }
@@ -99,6 +121,7 @@ fun RestScreen(
             when (destination) {
                 SoundTherapyDestination.PLAYER -> SoundTherapyDestination.LIBRARY
                 SoundTherapyDestination.AI_EDITOR, SoundTherapyDestination.AI_DETAIL -> SoundTherapyDestination.AI_LIBRARY
+                SoundTherapyDestination.REVIEW_EDITOR, SoundTherapyDestination.REVIEW_DETAIL -> SoundTherapyDestination.REVIEW_LIBRARY
                 else -> SoundTherapyDestination.REST
             }
         )
@@ -149,6 +172,7 @@ fun RestScreen(
             onSave = onSave,
             onOpenSoundTherapy = { onDestination(SoundTherapyDestination.LIBRARY) },
             onOpenAiTalk = { onDestination(SoundTherapyDestination.AI_LIBRARY) },
+            onOpenReviews = { onDestination(SoundTherapyDestination.REVIEW_LIBRARY) },
             onCollapse = onCollapse
         )
         SoundTherapyDestination.LIBRARY -> SoundTherapyLibrary(
@@ -224,6 +248,50 @@ fun RestScreen(
                 )
             }
         }
+        SoundTherapyDestination.REVIEW_LIBRARY -> ReviewLibrary(
+            reviews = reviews,
+            onBack = { onDestination(SoundTherapyDestination.REST) },
+            onAdd = { selectedReviewId = null; onDestination(SoundTherapyDestination.REVIEW_EDITOR) },
+            onOpen = { review -> selectedReviewId = review.id; onDestination(SoundTherapyDestination.REVIEW_DETAIL) },
+            onCollapse = onCollapse
+        )
+        SoundTherapyDestination.REVIEW_EDITOR -> ReviewEditor(
+            review = selectedReviewId?.let { id -> reviews.firstOrNull { it.id == id } },
+            onBack = { onDestination(if (selectedReviewId == null) SoundTherapyDestination.REVIEW_LIBRARY else SoundTherapyDestination.REVIEW_DETAIL) },
+            onSave = { draft ->
+                onSaveReview(draft)?.let { saved ->
+                    selectedReviewId = saved.id
+                    onDestination(SoundTherapyDestination.REVIEW_DETAIL)
+                }
+            },
+            createPhotoFile = createPhotoFile,
+            finalizePhoto = finalizePhoto,
+            importPhoto = importPhoto,
+            deletePhoto = deletePhoto
+        )
+        SoundTherapyDestination.REVIEW_DETAIL -> {
+            val review = selectedReviewId?.let { id -> reviews.firstOrNull { it.id == id } }
+            if (review == null) {
+                ReviewLibrary(
+                    reviews = reviews,
+                    onBack = { onDestination(SoundTherapyDestination.REST) },
+                    onAdd = { selectedReviewId = null; onDestination(SoundTherapyDestination.REVIEW_EDITOR) },
+                    onOpen = { selected -> selectedReviewId = selected.id; onDestination(SoundTherapyDestination.REVIEW_DETAIL) },
+                    onCollapse = onCollapse
+                )
+            } else {
+                ReviewDetail(
+                    review = review,
+                    onBack = { onDestination(SoundTherapyDestination.REVIEW_LIBRARY) },
+                    onEdit = { onDestination(SoundTherapyDestination.REVIEW_EDITOR) },
+                    onDelete = {
+                        onDeleteReview(review.id)
+                        selectedReviewId = null
+                        onDestination(SoundTherapyDestination.REVIEW_LIBRARY)
+                    }
+                )
+            }
+        }
     }
     }
 }
@@ -234,6 +302,7 @@ private fun RestOptionsPage(
     onSave: (List<String>) -> Unit,
     onOpenSoundTherapy: () -> Unit,
     onOpenAiTalk: () -> Unit,
+    onOpenReviews: () -> Unit,
     onCollapse: () -> Unit
 ) {
     var editingRest by remember { mutableStateOf<String?>(null) }
@@ -263,10 +332,7 @@ private fun RestOptionsPage(
         }
         Spacer(Modifier.height(14.dp))
         Text("恢复空间", color = Ink, fontWeight = FontWeight.Bold, fontSize = 17.sp, modifier = Modifier.fillMaxWidth())
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-            RestModuleBubble("♫", "音疗", onOpenSoundTherapy)
-            RestModuleBubble("ai", "ai谈", onOpenAiTalk)
-        }
+        FloatingRestModules(onOpenSoundTherapy, onOpenAiTalk, onOpenReviews)
         Spacer(Modifier.height(140.dp))
     }
 
@@ -286,15 +352,53 @@ private fun RestOptionsPage(
 }
 
 @Composable
-private fun RestModuleBubble(symbol: String, label: String, onClick: () -> Unit) {
+private fun FloatingRestModules(onSound: () -> Unit, onAi: () -> Unit, onReview: () -> Unit) {
+    val modules = remember(onSound, onAi, onReview) {
+        listOf(Triple("♫", "音疗", onSound), Triple("ai", "ai谈", onAi), Triple("评", "我评", onReview))
+    }
+    BoxWithConstraints(Modifier.fillMaxWidth().height(150.dp)) {
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        val bubblePx = with(density) { 102.dp.toPx() }
+        val fieldWidth = constraints.maxWidth.toFloat()
+        val fieldHeight = constraints.maxHeight.toFloat()
+        modules.forEachIndexed { index, (symbol, label, action) ->
+            val driftX = remember(index) { androidx.compose.animation.core.Animatable(0f) }
+            val driftY = remember(index) { androidx.compose.animation.core.Animatable(0f) }
+            LaunchedEffect(index) {
+                val random = Random(9301L + index * 71L)
+                while (isActive) {
+                    coroutineScope {
+                        val duration = 5_800 + random.nextInt(2_400)
+                        launch { driftX.animateTo(random.nextFloat() * 14f - 7f, tween(duration)) }
+                        launch { driftY.animateTo(random.nextFloat() * 12f - 6f, tween(duration + 500)) }
+                    }
+                }
+            }
+            val baseX = fieldWidth * (.17f + index * .33f) - bubblePx / 2f
+            val baseY = fieldHeight * (.50f + if (index == 1) .08f else -.03f) - bubblePx / 2f
+            RestModuleBubble(
+                symbol,
+                label,
+                action,
+                Modifier.graphicsLayer {
+                    translationX = baseX + with(density) { driftX.value.dp.toPx() }
+                    translationY = baseY + with(density) { driftY.value.dp.toPx() }
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun RestModuleBubble(symbol: String, label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
     GlassCard(
-        modifier = Modifier.size(112.dp).clickable(onClick = onClick),
+        modifier = modifier.size(102.dp).clickable(onClick = onClick),
         shape = CircleShape,
         elevation = 12.dp
     ) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(symbol, color = Blue, fontSize = if (symbol == "ai") 21.sp else 28.sp, fontWeight = FontWeight.SemiBold)
+                Text(symbol, color = Blue, fontSize = if (symbol == "ai") 21.sp else 27.sp, fontWeight = FontWeight.SemiBold)
                 Text(label, color = Ink, fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp)
             }
         }
@@ -399,14 +503,16 @@ private fun SoundTherapyPlayer(
     val accent = Blue
     var showModes by remember { mutableStateOf(false) }
     val queueIndex = queue.indexOf(title).takeIf { it >= 0 }
+    val playerScroll = rememberScrollState()
     Column(
-        Modifier.fillMaxSize().padding(start = 20.dp, top = 20.dp, end = 20.dp, bottom = 118.dp),
+        Modifier.fillMaxSize().verticalScroll(playerScroll)
+            .padding(start = 20.dp, top = 20.dp, end = 20.dp, bottom = 148.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         PageBackHeader("正在播放", title ?: "选择一首音乐", onBack)
-        Spacer(Modifier.weight(.08f))
-        Box(Modifier.size(276.dp)) {
+        Spacer(Modifier.height(4.dp))
+        Box(Modifier.size(224.dp)) {
             GlassCard(Modifier.fillMaxSize(), shape = CircleShape, elevation = 18.dp) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     if (bitmap != null) Image(bitmap, "音乐封面", Modifier.fillMaxSize().clip(CircleShape), contentScale = ContentScale.Crop)
@@ -436,6 +542,15 @@ private fun SoundTherapyPlayer(
                 fontSize = 12.sp
             )
         }
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            PlayerControlButton("◀│", "上一首", 58.dp, title != null, onPrevious)
+            PlayerControlButton(if (isPlaying) "Ⅱ" else "▶", if (isPlaying) "暂停" else "播放", 78.dp, title != null, onToggle)
+            PlayerControlButton("│▶", "下一首", 58.dp, title != null, onNext)
+        }
         val seconds = (durationMillis / 1_000L).coerceAtLeast(1L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         GlassVitalitySlider(
             value = (positionMillis / 1_000L).coerceIn(0, seconds.toLong()).toInt(),
@@ -448,17 +563,7 @@ private fun SoundTherapyPlayer(
             Text(formatTime(positionMillis), color = Muted, fontSize = 12.sp)
             Text("-${formatTime((durationMillis - positionMillis).coerceAtLeast(0L))}", color = Muted, fontSize = 12.sp)
         }
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            PlayerControlButton("◀│", "上一首", 64.dp, title != null, onPrevious)
-            PlayerControlButton(if (isPlaying) "Ⅱ" else "▶", if (isPlaying) "暂停" else "播放", 86.dp, title != null, onToggle)
-            PlayerControlButton("│▶", "下一首", 64.dp, title != null, onNext)
-        }
         if (!error.isNullOrBlank()) Text(error, color = RecoveryCoral, fontSize = 12.sp, textAlign = TextAlign.Center)
-        Spacer(Modifier.weight(.1f))
     }
     if (showModes) {
         GlassDialog(

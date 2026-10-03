@@ -1,6 +1,8 @@
 package com.jiang.vitality.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
@@ -10,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -17,6 +20,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 
@@ -63,14 +67,14 @@ private val DayColors = VitalityColors(
 )
 
 private val RecoveryColors = VitalityColors(
-    ink = Color(0xFF5B332B),
-    muted = Color(0xFF8B6054),
+    ink = Color(0xFF241B23),
+    muted = Color(0xFF493B44).copy(alpha = .82f),
     accent = RecoveryCoral,
     background = Color(0xFFFFF0DE),
     cardColors = listOf(
-        Color(0xFFFFFBF5).copy(alpha = .18f),
-        RecoveryOrange.copy(alpha = .035f),
-        Color.White.copy(alpha = .10f)
+        Color(0xFFFFFBF5).copy(alpha = .36f),
+        RecoveryOrange.copy(alpha = .08f),
+        Color.White.copy(alpha = .24f)
     ),
     cardBorder = Color.White.copy(alpha = .88f)
 )
@@ -93,8 +97,18 @@ val Blue: Color
     get() = LocalVitalityColors.current.accent
 
 @Composable
-fun VitalityTheme(recoveryMode: Boolean, content: @Composable () -> Unit) {
-    val colors = if (recoveryMode) RecoveryColors else DayColors
+fun VitalityTheme(recoveryMode: Boolean, vitality: Int = 100, content: @Composable () -> Unit) {
+    val targetAccent = workModeAccent(vitality)
+    val animatedAccent by animateColorAsState(targetAccent, tween(1_400), label = "theme-vitality-color")
+    val colors = if (recoveryMode) RecoveryColors else DayColors.copy(
+        accent = animatedAccent,
+        background = lerp(Color(0xFFF0F3F8), animatedAccent, .035f),
+        cardColors = listOf(
+            Color.White.copy(alpha = .18f),
+            lerp(Color(0xFFE8EEF7), animatedAccent, .08f).copy(alpha = .12f),
+            Color.White.copy(alpha = .12f)
+        )
+    )
     CompositionLocalProvider(LocalVitalityColors provides colors) {
         MaterialTheme(
             colorScheme = lightColorScheme(
@@ -112,6 +126,19 @@ fun VitalityTheme(recoveryMode: Boolean, content: @Composable () -> Unit) {
     }
 }
 
+private fun workModeAccent(value: Int): Color {
+    val colors = listOf(
+        Color(0xFF750C26),
+        Color(0xFFFE9D7B),
+        Color(0xFFC3B8F8),
+        Color(0xFF8EB7F5),
+        Color(0xFF144BB0)
+    )
+    val scaled = value.coerceIn(0, 100) / 25f
+    val index = scaled.toInt().coerceIn(0, colors.lastIndex - 1)
+    return lerp(colors[index], colors[index + 1], scaled - index)
+}
+
 @Composable
 fun VitalityRing(
     value: Int,
@@ -120,7 +147,13 @@ fun VitalityRing(
 ) {
     val accent = if (recoveryMode) RecoveryCoral else Blue
     val track = if (recoveryMode) RecoveryOrange.copy(alpha = .18f) else accent.copy(alpha = .11f)
-    val ringPalette = if (recoveryMode) CallItADayFlowPalette else DayFlowPalette
+    val ringPalette = if (recoveryMode) CallItADayFlowPalette else listOf(
+        lerp(accent, Color.White, .08f),
+        lerp(accent, Color(0xFFC3B8F8), .24f),
+        lerp(accent, Color.White, .20f),
+        lerp(accent, Color(0xFF8EB7F5), .18f),
+        accent
+    )
     val colorPhase = rememberFlowingColorPhase(
         periodSeconds = if (recoveryMode) 7.2f else 8.4f
     )
