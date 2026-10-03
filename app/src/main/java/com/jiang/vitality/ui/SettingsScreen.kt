@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.sp
 import com.jiang.vitality.data.Reminder
 import com.jiang.vitality.data.Snapshot
 import com.jiang.vitality.reminder.AlarmScheduler
+import com.jiang.vitality.ui.backdrop.LiquidSlider
 import com.jiang.vitality.ui.backdrop.LiquidToggle
 import com.jiang.vitality.ui.backdrop.LocalBackdrop
 import com.kyant.backdrop.backdrops.emptyBackdrop
@@ -86,14 +87,20 @@ import java.time.LocalDate
             Text("初始值  ${baseline.toInt()}",color=Ink,fontWeight=FontWeight.Bold)
             Text("仅在没有记录时作为当前状态。",fontSize=12.sp,color=Muted)
             Spacer(Modifier.height(10.dp))
-            GlassVitalitySlider(
-                value = baseline.toInt(),
-                onValueChange = {
-                    baseline = it.toFloat()
-                    onBaseline(it)
+            LiquidSlider(
+                value = { baseline },
+                onValueChange = { rawValue ->
+                    val value = rawValue.toInt().coerceIn(0, 100)
+                    baseline = value.toFloat()
+                    onBaseline(value)
                 },
-                valueRange = 0..100,
-                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                valueRange = 0f..100f,
+                visibilityThreshold = 1f,
+                backdrop = backdrop,
+                accentColor = Blue,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
             )
         } }
         GlassCard(Modifier.fillMaxWidth()) {
