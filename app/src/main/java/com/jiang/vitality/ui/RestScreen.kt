@@ -9,6 +9,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -57,6 +58,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -547,9 +554,9 @@ private fun SoundTherapyPlayer(
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            PlayerControlButton("◀│", "上一首", 58.dp, title != null, onPrevious)
-            PlayerControlButton(if (isPlaying) "Ⅱ" else "▶", if (isPlaying) "暂停" else "播放", 78.dp, title != null, onToggle)
-            PlayerControlButton("│▶", "下一首", 58.dp, title != null, onNext)
+            PlayerControlButton(PlayerGlyph.PREVIOUS, "上一首", 58.dp, title != null, onPrevious)
+            PlayerControlButton(if (isPlaying) PlayerGlyph.PAUSE else PlayerGlyph.PLAY, if (isPlaying) "暂停" else "播放", 78.dp, title != null, onToggle)
+            PlayerControlButton(PlayerGlyph.NEXT, "下一首", 58.dp, title != null, onNext)
         }
         val seconds = (durationMillis / 1_000L).coerceAtLeast(1L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         GlassVitalitySlider(
@@ -589,22 +596,87 @@ private fun SoundTherapyPlayer(
     }
 }
 
+private enum class PlayerGlyph { PREVIOUS, PLAY, PAUSE, NEXT }
+
 @Composable
 private fun PlayerControlButton(
-    symbol: String,
+    glyph: PlayerGlyph,
     label: String,
     size: androidx.compose.ui.unit.Dp,
     enabled: Boolean,
     onClick: () -> Unit
 ) {
+    var pressed by remember { mutableStateOf(false) }
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) .90f else 1f,
+        animationSpec = spring(dampingRatio = JiangMotion.PressDamping, stiffness = JiangMotion.PressStiffness),
+        label = "player-$label-press"
+    )
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         GlassCard(
-            Modifier.size(size).clickable(enabled = enabled, onClick = onClick),
+            Modifier
+                .size(size)
+                .graphicsLayer {
+                    scaleX = pressScale
+                    scaleY = pressScale
+                }
+                .semantics {
+                    role = Role.Button
+                    contentDescription = label
+                    if (enabled) onClick { onClick(); true } else disabled()
+                }
+                .pointerInput(enabled) {
+                    if (enabled) detectTapGestures(
+                        onPress = {
+                            pressed = true
+                            tryAwaitRelease()
+                            pressed = false
+                        },
+                        onTap = { onClick() }
+                    )
+                },
             shape = CircleShape,
             elevation = if (size > 70.dp) 14.dp else 8.dp
         ) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(symbol, color = if (enabled) Ink else Muted.copy(alpha = .45f), fontSize = if (size > 70.dp) 31.sp else 27.sp, fontWeight = FontWeight.SemiBold)
+                val iconColor = if (enabled) Ink else Muted.copy(alpha = .45f)
+                Canvas(Modifier.size(if (size > 70.dp) 31.dp else 24.dp)) {
+                    val unit = this.size.minDimension
+                    val stroke = unit * .105f
+                    val cap = androidx.compose.ui.graphics.StrokeCap.Round
+                    when (glyph) {
+                        PlayerGlyph.PLAY -> {
+                            val path = androidx.compose.ui.graphics.Path().apply {
+                                moveTo(unit * .33f, unit * .22f)
+                                quadraticTo(unit * .31f, unit * .18f, unit * .40f, unit * .23f)
+                                lineTo(unit * .78f, unit * .46f)
+                                quadraticTo(unit * .85f, unit * .50f, unit * .78f, unit * .54f)
+                                lineTo(unit * .40f, unit * .77f)
+                                quadraticTo(unit * .31f, unit * .82f, unit * .33f, unit * .72f)
+                                close()
+                            }
+                            drawPath(path, iconColor)
+                        }
+                        PlayerGlyph.PAUSE -> {
+                            drawRoundRect(iconColor, topLeft = Offset(unit * .27f, unit * .20f), size = androidx.compose.ui.geometry.Size(unit * .16f, unit * .60f), cornerRadius = androidx.compose.ui.geometry.CornerRadius(unit * .08f))
+                            drawRoundRect(iconColor, topLeft = Offset(unit * .57f, unit * .20f), size = androidx.compose.ui.geometry.Size(unit * .16f, unit * .60f), cornerRadius = androidx.compose.ui.geometry.CornerRadius(unit * .08f))
+                        }
+                        PlayerGlyph.PREVIOUS, PlayerGlyph.NEXT -> {
+                            val previous = glyph == PlayerGlyph.PREVIOUS
+                            val barX = if (previous) unit * .23f else unit * .77f
+                            drawLine(iconColor, Offset(barX, unit * .27f), Offset(barX, unit * .73f), stroke, cap)
+                            val path = androidx.compose.ui.graphics.Path().apply {
+                                if (previous) {
+                                    moveTo(unit * .72f, unit * .24f); lineTo(unit * .35f, unit * .50f); lineTo(unit * .72f, unit * .76f)
+                                } else {
+                                    moveTo(unit * .28f, unit * .24f); lineTo(unit * .65f, unit * .50f); lineTo(unit * .28f, unit * .76f)
+                                }
+                                close()
+                            }
+                            drawPath(path, iconColor)
+                        }
+                    }
+                }
             }
         }
         Text(label, color = if (enabled) Muted else Muted.copy(alpha = .4f), fontSize = 10.sp)

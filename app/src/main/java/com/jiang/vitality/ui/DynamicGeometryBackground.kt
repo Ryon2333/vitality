@@ -8,6 +8,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -112,7 +113,9 @@ fun DynamicGeometryBackground(
     modifier: Modifier = Modifier
 ) {
     if (recoveryMode) {
-        OceanSunsetBackground(modifier)
+        val sceneOrdinal = rememberSaveable { Random.nextInt(DuskScene.entries.size) }
+        val scene = DuskScene.entries[sceneOrdinal]
+        DreamyDuskBackground(scene, modifier)
         return
     }
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -295,8 +298,29 @@ private fun vitalityColor(value: Int): Color {
     return lerp(stops[index], stops[index + 1], scaled - index)
 }
 
+private enum class DuskScene {
+    OCEAN, CORNFIELD, SUMMER_BEACH, LAKESIDE, LAYERED_HILLS, CLOUD_SEA, ISLAND
+}
+
+private data class DuskPalette(
+    val zenith: Color,
+    val upper: Color,
+    val horizon: Color,
+    val depth: Color
+)
+
+private fun DuskScene.palette(): DuskPalette = when (this) {
+    DuskScene.OCEAN -> DuskPalette(Color(0xFF74424D), Color(0xFFEC6D4A), Color(0xFFFA9C3A), Color(0xFF173F61))
+    DuskScene.CORNFIELD -> DuskPalette(Color(0xFF5B4050), Color(0xFFD96543), Color(0xFFF5A348), Color(0xFF4D352D))
+    DuskScene.SUMMER_BEACH -> DuskPalette(Color(0xFF67506C), Color(0xFFEE8060), Color(0xFFFFBD72), Color(0xFF245880))
+    DuskScene.LAKESIDE -> DuskPalette(Color(0xFF4A4968), Color(0xFFCF6C65), Color(0xFFF3AA61), Color(0xFF243F5C))
+    DuskScene.LAYERED_HILLS -> DuskPalette(Color(0xFF584662), Color(0xFFD77368), Color(0xFFF0AD73), Color(0xFF3E3D52))
+    DuskScene.CLOUD_SEA -> DuskPalette(Color(0xFF5A4A66), Color(0xFFE57B69), Color(0xFFFFC589), Color(0xFF59627A))
+    DuskScene.ISLAND -> DuskPalette(Color(0xFF503E55), Color(0xFFD95F4E), Color(0xFFFFA447), Color(0xFF17394F))
+}
+
 @Composable
-private fun OceanSunsetBackground(modifier: Modifier = Modifier) {
+private fun DreamyDuskBackground(scene: DuskScene, modifier: Modifier = Modifier) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val clock = remember { mutableLongStateOf(0L) }
     LaunchedEffect(lifecycleOwner) {
@@ -313,17 +337,33 @@ private fun OceanSunsetBackground(modifier: Modifier = Modifier) {
     }
     Canvas(modifier) {
         val seconds = clock.longValue / 1_000_000_000f
-        val horizon = size.height * .46f
+        val palette = scene.palette()
+        val horizon = size.height * when (scene) {
+            DuskScene.CORNFIELD -> .50f
+            DuskScene.SUMMER_BEACH -> .43f
+            DuskScene.CLOUD_SEA -> .57f
+            else -> .46f
+        }
         drawRect(
             Brush.verticalGradient(
-                0f to Color(0xFF7E3D48),
-                .28f to Color(0xFFEC6D4A),
-                .46f to Color(0xFFFA9C3A),
-                .47f to Color(0xFF356D91),
-                1f to Color(0xFF173F61)
+                0f to palette.zenith,
+                .30f to palette.upper,
+                .52f to palette.horizon,
+                1f to palette.depth
             )
         )
-        val sunCenter = Offset(size.width * .72f, horizon - size.minDimension * .085f)
+        val sunCenter = Offset(
+            size.width * when (scene) {
+                DuskScene.CORNFIELD -> .27f
+                DuskScene.SUMMER_BEACH -> .68f
+                DuskScene.LAKESIDE -> .35f
+                DuskScene.LAYERED_HILLS -> .73f
+                DuskScene.CLOUD_SEA -> .58f
+                DuskScene.ISLAND -> .31f
+                else -> .72f
+            },
+            horizon - size.minDimension * .085f
+        )
         val sunRadius = size.minDimension * .092f
         drawCircle(
             Brush.radialGradient(
@@ -336,52 +376,140 @@ private fun OceanSunsetBackground(modifier: Modifier = Modifier) {
         )
         drawCircle(Color(0xFFFFE1A0).copy(.94f), sunRadius, sunCenter)
 
-        // Broad moving water masses make the lower half read as an ocean rather than
-        // a stack of decorative sine lines.
-        repeat(7) { layer ->
-            val baseY = horizon + layer * size.height * .078f
-            val amplitude = size.height * (.008f + layer * .0015f)
-            val path = Path()
-            val samples = 34
-            repeat(samples) { index ->
-                val x = size.width * index / (samples - 1f)
-                val wave = sin(index * .66f + seconds * (.26f + layer * .025f) + layer * 1.31f) * amplitude
-                val secondary = sin(index * .21f - seconds * .17f + layer) * amplitude * .42f
-                val y = baseY + wave + secondary
-                if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
-            }
-            path.lineTo(size.width, size.height)
-            path.lineTo(0f, size.height)
-            path.close()
-            drawPath(
-                path,
-                Brush.verticalGradient(
-                    listOf(
-                        Color(0xFF6E91A5).copy(alpha = .14f + layer * .018f),
-                        Color(0xFF245880).copy(alpha = .10f + layer * .025f)
-                    ),
-                    startY = baseY - amplitude,
-                    endY = size.height
-                )
-            )
+        when (scene) {
+            DuskScene.OCEAN -> drawDuskWater(horizon, sunCenter, seconds, Color(0xFF245880), 1f)
+            DuskScene.SUMMER_BEACH -> drawSummerBeach(horizon, sunCenter, seconds)
+            DuskScene.CORNFIELD -> drawCornfield(horizon, seconds)
+            DuskScene.LAKESIDE -> drawLakeside(horizon, sunCenter, seconds)
+            DuskScene.LAYERED_HILLS -> drawLayeredHills(horizon, seconds)
+            DuskScene.CLOUD_SEA -> drawCloudSea(horizon, seconds)
+            DuskScene.ISLAND -> drawIsland(horizon, sunCenter, seconds)
         }
+    }
+}
 
-        // Broken sunset reflection follows the waves and drifts at a different rate.
-        repeat(8) { row ->
-            val y = horizon + size.height * (.025f + row * .052f)
-            val width = size.width * (.22f - row * .016f).coerceAtLeast(.06f)
-            val centerX = sunCenter.x + sin(seconds * .22f + row * 1.7f) * size.width * .025f
-            val reflection = Path().apply {
-                moveTo(centerX - width, y)
-                quadraticTo(centerX, y + sin(seconds * .31f + row) * 7.dp.toPx(), centerX + width, y)
-            }
-            drawPath(
-                reflection,
-                Color(0xFFFFC56F).copy(alpha = (.30f - row * .025f).coerceAtLeast(.07f)),
-                style = Stroke((3.2f - row * .22f).coerceAtLeast(1f).dp.toPx())
-            )
+private fun DrawScope.drawDuskWater(horizon: Float, sunCenter: Offset, seconds: Float, water: Color, strength: Float) {
+    repeat(7) { layer ->
+        val baseY = horizon + layer * size.height * .078f
+        val amplitude = size.height * (.008f + layer * .0015f)
+        val path = Path()
+        repeat(34) { index ->
+            val x = size.width * index / 33f
+            val y = baseY + sin(index * .66f + seconds * (.26f + layer * .025f) + layer * 1.31f) * amplitude +
+                sin(index * .21f - seconds * .17f + layer) * amplitude * .42f
+            if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
         }
-        drawLine(Color.White.copy(.32f), Offset(0f, horizon), Offset(size.width, horizon), .75.dp.toPx())
+        path.lineTo(size.width, size.height); path.lineTo(0f, size.height); path.close()
+        drawPath(path, Brush.verticalGradient(listOf(Color(0xFF93ADBA).copy(.10f * strength + layer * .012f), water.copy(.12f * strength + layer * .022f)), baseY - amplitude, size.height))
+    }
+    repeat(8) { row ->
+        val y = horizon + size.height * (.025f + row * .052f)
+        val width = size.width * (.22f - row * .016f).coerceAtLeast(.06f)
+        val centerX = sunCenter.x + sin(seconds * .22f + row * 1.7f) * size.width * .025f
+        val reflection = Path().apply {
+            moveTo(centerX - width, y)
+            quadraticTo(centerX, y + sin(seconds * .31f + row) * 7.dp.toPx(), centerX + width, y)
+        }
+        drawPath(reflection, Color(0xFFFFC56F).copy((.30f - row * .025f).coerceAtLeast(.07f) * strength), style = Stroke((3.2f - row * .22f).coerceAtLeast(1f).dp.toPx()))
+    }
+    drawLine(Color.White.copy(.28f * strength), Offset(0f, horizon), Offset(size.width, horizon), .75.dp.toPx())
+}
+
+private fun DrawScope.drawSummerBeach(horizon: Float, sunCenter: Offset, seconds: Float) {
+    drawDuskWater(horizon, sunCenter, seconds, Color(0xFF2E7192), .85f)
+    val shore = size.height * .73f
+    val sand = Path().apply {
+        moveTo(0f, shore + sin(seconds * .18f) * 5.dp.toPx())
+        quadraticTo(size.width * .48f, shore - size.height * .035f, size.width, shore + size.height * .025f)
+        lineTo(size.width, size.height); lineTo(0f, size.height); close()
+    }
+    drawPath(sand, Brush.verticalGradient(listOf(Color(0xFFE5AF77).copy(.88f), Color(0xFF9B715E).copy(.92f)), shore, size.height))
+    repeat(3) { row ->
+        val y = shore - row * size.height * .055f + sin(seconds * .24f + row) * 5.dp.toPx()
+        val foam = Path().apply {
+            moveTo(-size.width * .08f, y)
+            cubicTo(size.width * .22f, y - 12.dp.toPx(), size.width * .64f, y + 15.dp.toPx(), size.width * 1.08f, y - 3.dp.toPx())
+        }
+        drawPath(foam, Color.White.copy(.22f - row * .04f), style = Stroke((2.3f - row * .35f).dp.toPx()))
+    }
+}
+
+private fun DrawScope.drawCornfield(horizon: Float, seconds: Float) {
+    val hill = Path().apply {
+        moveTo(0f, horizon + size.height * .05f)
+        cubicTo(size.width * .22f, horizon - size.height * .04f, size.width * .68f, horizon + size.height * .02f, size.width, horizon - size.height * .01f)
+        lineTo(size.width, size.height); lineTo(0f, size.height); close()
+    }
+    drawPath(hill, Brush.verticalGradient(listOf(Color(0xFF85603D).copy(.72f), Color(0xFF3D332C)), horizon, size.height))
+    repeat(30) { index ->
+        val x = size.width * (index + .35f) / 30f
+        val depth = .55f + (index % 6) / 10f
+        val base = size.height * (1.02f - (index % 5) * .012f)
+        val height = size.height * (.17f + depth * .12f)
+        val sway = sin(seconds * .30f + index * .71f) * 5.dp.toPx() * depth
+        val top = Offset(x + sway, base - height)
+        val stalk = Color(0xFF4A3B28).copy(.44f + depth * .30f)
+        drawLine(stalk, Offset(x, base), top, (1.1f + depth).dp.toPx(), androidx.compose.ui.graphics.StrokeCap.Round)
+        drawOval(Color(0xFFCCA55B).copy(.55f), Offset(top.x - 2.6.dp.toPx(), top.y), androidx.compose.ui.geometry.Size(5.2.dp.toPx(), 13.dp.toPx()))
+        drawLine(stalk, Offset(x + sway * .45f, base - height * .50f), Offset(x + sway * .45f - 8.dp.toPx(), base - height * .61f), 1.2.dp.toPx(), androidx.compose.ui.graphics.StrokeCap.Round)
+        drawLine(stalk, Offset(x + sway * .62f, base - height * .66f), Offset(x + sway * .62f + 7.dp.toPx(), base - height * .75f), 1.2.dp.toPx(), androidx.compose.ui.graphics.StrokeCap.Round)
+    }
+}
+
+private fun DrawScope.drawLakeside(horizon: Float, sunCenter: Offset, seconds: Float) {
+    val mountains = Path().apply {
+        moveTo(0f, horizon)
+        lineTo(size.width * .16f, horizon - size.height * .12f); lineTo(size.width * .34f, horizon - size.height * .025f)
+        lineTo(size.width * .55f, horizon - size.height * .17f); lineTo(size.width * .76f, horizon - size.height * .035f)
+        lineTo(size.width, horizon - size.height * .10f); lineTo(size.width, horizon); close()
+    }
+    drawPath(mountains, Color(0xFF39455A).copy(.60f))
+    drawDuskWater(horizon, sunCenter, seconds * .72f, Color(0xFF294F68), .72f)
+}
+
+private fun DrawScope.drawLayeredHills(horizon: Float, seconds: Float) {
+    val colors = listOf(Color(0xFF9C6A70).copy(.58f), Color(0xFF625365).copy(.76f), Color(0xFF343848).copy(.92f))
+    repeat(3) { layer ->
+        val y = horizon + size.height * (.02f + layer * .13f)
+        val shift = sin(seconds * .06f + layer) * size.width * .012f
+        val path = Path().apply {
+            moveTo(-20.dp.toPx(), y)
+            cubicTo(size.width * .20f + shift, y - size.height * (.12f - layer * .015f), size.width * .42f, y + size.height * .04f, size.width * .62f + shift, y - size.height * .08f)
+            quadraticTo(size.width * .85f, y - size.height * .14f, size.width + 20.dp.toPx(), y)
+            lineTo(size.width + 20.dp.toPx(), size.height); lineTo(-20.dp.toPx(), size.height); close()
+        }
+        drawPath(path, colors[layer])
+    }
+}
+
+private fun DrawScope.drawCloudSea(horizon: Float, seconds: Float) {
+    drawLayeredHills(horizon + size.height * .10f, seconds * .35f)
+    repeat(22) { index ->
+        val row = index / 8
+        val radius = size.minDimension * (.09f + (index % 4) * .012f)
+        val x = size.width * ((index % 8) / 7f) + sin(seconds * .045f + index) * 10.dp.toPx()
+        val y = horizon + row * radius * .75f + sin(seconds * .08f + index * .4f) * 4.dp.toPx()
+        drawCircle(Brush.radialGradient(listOf(Color(0xFFFFE0C3).copy(.32f), Color(0xFFD6C2C7).copy(.13f), Color.Transparent), Offset(x, y), radius), radius, Offset(x, y))
+    }
+}
+
+private fun DrawScope.drawIsland(horizon: Float, sunCenter: Offset, seconds: Float) {
+    drawDuskWater(horizon, sunCenter, seconds, Color(0xFF183F56), .84f)
+    val islandY = size.height * .70f
+    val island = Path().apply {
+        moveTo(size.width * .45f, islandY)
+        quadraticTo(size.width * .64f, islandY - size.height * .07f, size.width * .84f, islandY)
+        quadraticTo(size.width * .65f, islandY + size.height * .035f, size.width * .45f, islandY)
+        close()
+    }
+    drawPath(island, Color(0xFF29352F).copy(.94f))
+    val trunkBase = Offset(size.width * .67f, islandY - size.height * .025f)
+    val trunkTop = Offset(size.width * .64f + sin(seconds * .16f) * 2.dp.toPx(), islandY - size.height * .17f)
+    drawLine(Color(0xFF2B302D), trunkBase, trunkTop, 4.dp.toPx(), androidx.compose.ui.graphics.StrokeCap.Round)
+    repeat(6) { leaf ->
+        val angle = leaf * PI.toFloat() / 3f + sin(seconds * .13f) * .04f
+        val end = Offset(trunkTop.x + cos(angle) * 32.dp.toPx(), trunkTop.y + sin(angle) * 14.dp.toPx())
+        drawLine(Color(0xFF26362E).copy(.92f), trunkTop, end, 3.dp.toPx(), androidx.compose.ui.graphics.StrokeCap.Round)
     }
 }
 
