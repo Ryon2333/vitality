@@ -22,6 +22,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -77,6 +78,8 @@ fun LiquidBottomTabs(
         var dragging by remember { mutableStateOf(false) }
         var dragPosition by remember { mutableFloatStateOf(selectedTabIndex().toFloat()) }
         val indicatorPosition = { if (dragging) dragPosition else settledPosition.value }
+        val currentSelectedTabIndex by rememberUpdatedState(selectedTabIndex)
+        val currentOnTabSelected by rememberUpdatedState(onTabSelected)
 
         // 状态联动：外部 Tab 切换时以物理弹簧滑向目标
         val targetTabIndex = selectedTabIndex()
@@ -174,8 +177,12 @@ fun LiquidBottomTabs(
                         .pointerInput(tabsCount, isLtr) {
                             detectHorizontalDragGestures(
                                 onDragStart = {
+                                    // Re-grab the pill exactly where its current animation is.
+                                    // Starting from a captured selected index made a second
+                                    // gesture jump to an old edge before following the finger.
                                     dragging = true
-                                    dragPosition = selectedTabIndex().toFloat()
+                                    dragPosition = settledPosition.value
+                                        .fastCoerceIn(0f, (tabsCount - 1).toFloat())
                                     animationScope.launch {
                                         settledPosition.stop()
                                         pressProgress.animateTo(1f, spring(.7f, 700f, .001f))
@@ -190,7 +197,7 @@ fun LiquidBottomTabs(
                                 onDragEnd = {
                                     val releasedPosition = dragPosition
                                     val target = dragPosition.roundToInt().fastCoerceIn(0, tabsCount - 1)
-                                    onTabSelected(target)
+                                    currentOnTabSelected(target)
                                     animationScope.launch {
                                         // Keep rendering the direct pointer position until Animatable has
                                         // taken it over. Otherwise the pill flashes back to its old tab for
@@ -203,7 +210,8 @@ fun LiquidBottomTabs(
                                 },
                                 onDragCancel = {
                                     val releasedPosition = dragPosition
-                                    val target = selectedTabIndex().fastCoerceIn(0, tabsCount - 1)
+                                    val target = currentSelectedTabIndex()
+                                        .fastCoerceIn(0, tabsCount - 1)
                                     animationScope.launch {
                                         settledPosition.snapTo(releasedPosition)
                                         dragging = false

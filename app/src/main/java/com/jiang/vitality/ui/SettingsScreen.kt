@@ -92,6 +92,10 @@ import java.time.LocalDate
                 onValueChange = { rawValue ->
                     val value = rawValue.toInt().coerceIn(0, 100)
                     baseline = value.toFloat()
+                },
+                onValueChangeFinished = { rawValue ->
+                    val value = rawValue.toInt().coerceIn(0, 100)
+                    baseline = value.toFloat()
                     onBaseline(value)
                 },
                 valueRange = 0f..100f,

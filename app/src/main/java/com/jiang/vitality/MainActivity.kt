@@ -40,8 +40,10 @@ import com.jiang.vitality.data.Snapshot
 import com.jiang.vitality.data.VitalityStore
 import com.jiang.vitality.reminder.AlarmScheduler
 import com.jiang.vitality.ui.*
+import com.jiang.vitality.ui.backdrop.LiquidSlider
 import com.jiang.vitality.ui.backdrop.LocalBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.emptyBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.jiang.vitality.ui.navigation.JiangLiquidNavigationBar
 import com.jiang.vitality.widget.VitalityWidget
@@ -49,6 +51,7 @@ import dev.chrisbanes.haze.rememberHazeState
 import dev.chrisbanes.haze.hazeSource
 import kotlinx.coroutines.delay
 import java.io.File
+import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
     private val store by lazy { VitalityStore(this) }
@@ -532,6 +535,7 @@ private fun CheckinDialog(
     deletePhoto: (String) -> Unit
 ) {
     val context = LocalContext.current
+    val backdrop = LocalBackdrop.current ?: emptyBackdrop()
     var value by remember(initial) { mutableIntStateOf(initial) }
     var note by remember { mutableStateOf("") }
     var photoPaths by remember { mutableStateOf(listOf<String>()) }
@@ -567,11 +571,18 @@ private fun CheckinDialog(
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold
                 )
-                GlassVitalitySlider(
-                    value = value,
-                    onValueChange = { value = it },
-                    valueRange = 0..100,
-                    modifier = Modifier.fillMaxWidth()
+                LiquidSlider(
+                    value = { value.toFloat() },
+                    onValueChange = {
+                        value = it.roundToInt().coerceIn(0, 100)
+                    },
+                    valueRange = 0f..100f,
+                    visibilityThreshold = 1f,
+                    backdrop = backdrop,
+                    accentColor = Blue,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
                 )
                 OutlinedTextField(
                     value = note,
