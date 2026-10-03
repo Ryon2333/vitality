@@ -363,6 +363,7 @@ class MainActivity : ComponentActivity() {
                         soundTherapyDestination = SoundTherapyDestination.PLAYER
                         navigationCollapsed = false
                     },
+                    onStop = meditationPlayer::stop,
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
                         .navigationBarsPadding()
