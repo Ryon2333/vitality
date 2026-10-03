@@ -43,9 +43,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.jiang.vitality.ui.backdrop.LocalBackdrop
 import com.kyant.backdrop.drawBackdrop
-import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
-import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.highlight.HighlightStyle
 import com.kyant.backdrop.shadow.InnerShadow
@@ -322,13 +320,13 @@ private fun BubbleItem(
                 backdrop = backdrop,
                 shape = { RoundedCornerShape(50) },
                 effects = {
-                    vibrancy()
-                    blur(2.dp.toPx())
                     lens(
                         refractionHeight = 14.dp.toPx(),
                         refractionAmount = 24.dp.toPx(),
                         depthEffect = true,
-                        chromaticAberration = true
+                        // Several bubbles can be visible simultaneously. A single
+                        // refracted sample keeps the glass shape without 7-band cost.
+                        chromaticAberration = false
                     )
                 },
                 highlight = {

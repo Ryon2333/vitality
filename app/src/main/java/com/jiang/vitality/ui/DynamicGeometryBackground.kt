@@ -30,10 +30,6 @@ import kotlin.math.hypot
 import kotlin.math.sin
 import kotlin.random.Random
 
-// The large river moves slowly enough that 30 Hz remains visually continuous while
-// leaving the 60/120 Hz UI thread budget to touch, scrolling and glass interactions.
-private const val GeometryFrameIntervalNanos = 32_000_000L
-
 // The single travelling shape morphs between a rounded square (4) and a dodecagon (12).
 private const val MinSides = 4
 private const val MaxSides = 12
@@ -92,7 +88,40 @@ private class RiverBody(
     val alpha: Float,
     val tintIndex: Int,
     var phase: Float = 0f
-)
+) {
+    var cachedWidth = Float.NaN
+    var cachedHeight = Float.NaN
+    var outerPath = Path()
+    var innerPath = Path()
+    var firstPoint = Offset.Zero
+    var lastPoint = Offset.Zero
+}
+
+private class GeometryPaintCache {
+    private var accent = Color.Unspecified
+    var background: Brush = Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent))
+        private set
+    var palette: Array<Color> = Array(4) { Color.Transparent }
+        private set
+
+    fun update(newAccent: Color) {
+        if (newAccent == accent) return
+        accent = newAccent
+        background = Brush.verticalGradient(
+            listOf(
+                Color(0xFFF0F3F8),
+                lerp(Color(0xFFF0F3F8), newAccent, .13f),
+                lerp(Color(0xFFF0F3F8), newAccent, .07f)
+            )
+        )
+        palette = arrayOf(
+            lerp(newAccent, Color.White, .38f),
+            lerp(newAccent, Color(0xFFC3B8F8), .46f),
+            lerp(newAccent, Color(0xFFF0F3F8), .62f),
+            lerp(newAccent, Color(0xFFFE9D7B), .60f)
+        )
+    }
+}
 
 private data class GeometryMood(
     val maxSpeed: Float,
@@ -160,6 +189,7 @@ fun DynamicGeometryBackground(
         )
     }
     val frameTick = remember { mutableLongStateOf(0L) }
+    val paintCache = remember { GeometryPaintCache() }
 
     LaunchedEffect(lifecycleOwner, bodies, riverBodies, mood) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -171,7 +201,6 @@ fun DynamicGeometryBackground(
                     previousUpdate = frame
                     continue
                 }
-                if (frame - previousUpdate < GeometryFrameIntervalNanos) continue
                 val dt = ((frame - previousUpdate) / 1_000_000_000f).coerceIn(0f, .067f)
                 previousUpdate = frame
                 val nowMs = frame / 1_000_000L
@@ -254,21 +283,9 @@ fun DynamicGeometryBackground(
     )
     Canvas(modifier) {
         frameTick.longValue
-        drawRect(
-            Brush.verticalGradient(
-                listOf(
-                    Color(0xFFF0F3F8),
-                    lerp(Color(0xFFF0F3F8), vitalityAccent, .13f),
-                    lerp(Color(0xFFF0F3F8), vitalityAccent, .07f)
-                )
-            )
-        )
-        val palette = listOf(
-            lerp(vitalityAccent, Color.White, .38f),
-            lerp(vitalityAccent, Color(0xFFC3B8F8), .46f),
-            lerp(vitalityAccent, Color(0xFFF0F3F8), .62f),
-            lerp(vitalityAccent, Color(0xFFFE9D7B), .60f)
-        )
+        paintCache.update(vitalityAccent)
+        drawRect(paintCache.background)
+        val palette = paintCache.palette
         riverBodies.forEach { river ->
             drawRiverBody(river, palette[river.tintIndex], mood.opacity)
         }
@@ -325,13 +342,9 @@ private fun DreamyDuskBackground(scene: DuskScene, modifier: Modifier = Modifier
     val clock = remember { mutableLongStateOf(0L) }
     LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            var previous = 0L
             while (isActive) {
                 val frame = withFrameNanos { it }
-                if (previous == 0L || frame - previous >= GeometryFrameIntervalNanos) {
-                    previous = frame
-                    clock.longValue = frame
-                }
+                clock.longValue = frame
             }
         }
     }
@@ -521,21 +534,25 @@ private fun DrawScope.drawRiverBody(
     val startT = -.30f
     val endT = 1.30f
     val stablePhase = 1f
-    val firstPoint = riverPoint(startT, river.lane, stablePhase, size.width, size.height)
-    val lastPoint = riverPoint(endT, river.lane, stablePhase, size.width, size.height)
     val riverWidth = size.minDimension * river.width
     val halfLane = riverWidth / size.height / 2f
-    val outerRiver = riverRibbonPath(
-        startT, endT, river.lane, stablePhase, halfLane * 1.10f, samples = 25
-    )
-    val riverPath = riverRibbonPath(
-        startT, endT, river.lane, stablePhase, halfLane, samples = 25
-    )
+    if (river.cachedWidth != size.width || river.cachedHeight != size.height) {
+        river.cachedWidth = size.width
+        river.cachedHeight = size.height
+        river.firstPoint = riverPoint(startT, river.lane, stablePhase, size.width, size.height)
+        river.lastPoint = riverPoint(endT, river.lane, stablePhase, size.width, size.height)
+        river.outerPath = riverRibbonPath(
+            startT, endT, river.lane, stablePhase, halfLane * 1.10f, samples = 25
+        )
+        river.innerPath = riverRibbonPath(
+            startT, endT, river.lane, stablePhase, halfLane, samples = 25
+        )
+    }
     val alpha = river.alpha * moodOpacity
 
     // Filled ribbons are substantially cheaper than a near-screen-width stroked path.
     drawPath(
-        path = outerRiver,
+        path = river.outerPath,
         brush = Brush.linearGradient(
             colors = listOf(
                 Color.Transparent,
@@ -543,13 +560,13 @@ private fun DrawScope.drawRiverBody(
                 tint.copy(alpha = alpha * .34f),
                 Color.Transparent
             ),
-            start = firstPoint,
-            end = lastPoint
+            start = river.firstPoint,
+            end = river.lastPoint
         )
     )
 
     drawPath(
-        path = riverPath,
+        path = river.innerPath,
         brush = Brush.linearGradient(
             colors = listOf(
                 Color.Transparent,
@@ -558,8 +575,8 @@ private fun DrawScope.drawRiverBody(
                 tint.copy(alpha = alpha * .84f),
                 Color.Transparent
             ),
-            start = firstPoint,
-            end = lastPoint
+            start = river.firstPoint,
+            end = river.lastPoint
         )
     )
 

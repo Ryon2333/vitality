@@ -72,7 +72,6 @@ import com.kyant.backdrop.shadow.Shadow
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.hazeEffect
-import dev.chrisbanes.haze.hazeSource
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -248,8 +247,7 @@ fun GlassBackdropSource(
     recoveryMode: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val hazeState = LocalGlassHazeState.current ?: return
-    Canvas(modifier.hazeSource(hazeState)) {
+    Canvas(modifier) {
         val cool = if (recoveryMode) Color(0xFFE9C8B5) else Color(0xFFBCD0EF)
         val pale = if (recoveryMode) Color(0xFFF5DED0) else Color(0xFFD9DFF2)
         drawCircle(
@@ -283,6 +281,8 @@ fun LiquidGlassSurface(
     darkSurfaceAlpha: Float = .07f,
     lightInnerHighlightAlpha: Float = .24f,
     darkInnerHighlightAlpha: Float = .08f,
+    vibrancyEnabled: Boolean = true,
+    chromaticAberration: Boolean = true,
     elevation: Dp = 10.dp,
     backdropBlur: Boolean = true,
     content: @Composable BoxScope.() -> Unit
@@ -306,13 +306,13 @@ fun LiquidGlassSurface(
                     backdrop = backdrop,
                     shape = { shape },
                     effects = {
-                        vibrancy()
-                        blur((blurRadius * blurScale).toPx())
+                        if (vibrancyEnabled) vibrancy()
+                        if (blurScale > 0f) blur((blurRadius * blurScale).toPx())
                         lens(
                             refractionHeight = 16f.dp.toPx(),
                             refractionAmount = 20f.dp.toPx(),
                             depthEffect = true,
-                            chromaticAberration = true
+                            chromaticAberration = chromaticAberration
                         )
                     },
                     highlight = {
@@ -401,11 +401,13 @@ fun GlassCard(
     modifier = modifier,
     shape = shape,
     blurRadius = 22.dp,
-    blurScale = .12f,
+    blurScale = 0f,
     lightSurfaceAlpha = .018f,
     darkSurfaceAlpha = .03f,
     lightInnerHighlightAlpha = .10f,
     darkInnerHighlightAlpha = .04f,
+    vibrancyEnabled = false,
+    chromaticAberration = false,
     elevation = elevation,
     backdropBlur = true,
     content = content

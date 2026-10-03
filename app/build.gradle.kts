@@ -15,6 +15,19 @@ android {
         versionName = "2.0"
     }
     buildFeatures { compose = true }
+    buildTypes {
+        create("performance") {
+            initWith(getByName("release"))
+            // Internal performance build: release optimizations with the existing
+            // debug certificate, so it can replace development installs in-place.
+            signingConfig = signingConfigs.getByName("debug")
+            isDebuggable = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+            matchingFallbacks += listOf("release")
+        }
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

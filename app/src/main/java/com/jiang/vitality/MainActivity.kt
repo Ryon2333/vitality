@@ -13,12 +13,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.SizeTransform
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -159,7 +156,16 @@ class MainActivity : ComponentActivity() {
                         Modifier
                             .matchParentSize()
                             .layerBackdrop(wallpaperBackdrop)
-                            .hazeSource(hazeState)
+                            // Backdrop is the renderer on Android 13+. Keeping a Haze
+                            // source there would create an unused second full-screen
+                            // offscreen capture on every animated-background frame.
+                            .then(
+                                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                                    Modifier.hazeSource(hazeState)
+                                } else {
+                                    Modifier
+                                }
+                            )
                             .background(LocalVitalityColors.current.background)
                     ) {
                         DynamicGeometryBackground(
@@ -185,13 +191,14 @@ class MainActivity : ComponentActivity() {
                             modifier = Modifier.fillMaxSize(),
                             transitionSpec = {
                                 val direction = if (targetState > initialState) 1 else -1
-                                val motion = spring<Float>(dampingRatio = JiangMotion.SpatialDamping, stiffness = JiangMotion.SpatialStiffness)
-                                (fadeIn(motion) + scaleIn(motion, initialScale = .975f) +
-                                    slideInHorizontally(spring(dampingRatio = JiangMotion.SpatialDamping, stiffness = JiangMotion.SpatialStiffness)) { direction * it / 9 })
+                                // Fade-through keeps the navigation motion while avoiding
+                                // a long overlap where two complete glass pages are sampled.
+                                (fadeIn(tween(durationMillis = 150, delayMillis = 70)) +
+                                    slideInHorizontally(tween(durationMillis = 220, delayMillis = 50)) { direction * it / 12 })
                                     .togetherWith(
-                                        fadeOut(motion) + scaleOut(motion, targetScale = .975f) +
-                                            slideOutHorizontally(spring(dampingRatio = JiangMotion.SpatialDamping, stiffness = JiangMotion.SpatialStiffness)) { -direction * it / 9 }
-                                    ).using(SizeTransform(clip = false))
+                                        fadeOut(tween(durationMillis = 90)) +
+                                            slideOutHorizontally(tween(durationMillis = 140)) { -direction * it / 16 }
+                                    )
                             },
                             label = "main-page-transition"
                         ) { page ->
