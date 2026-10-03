@@ -22,8 +22,7 @@ import com.jiang.vitality.ui.RecoveryCoral
 import com.jiang.vitality.ui.backdrop.LiquidBottomTab
 import com.jiang.vitality.ui.backdrop.LiquidBottomTabs
 import com.jiang.vitality.ui.backdrop.LiquidButton
-import com.jiang.vitality.ui.backdrop.LocalBackdrop
-import com.kyant.backdrop.backdrops.emptyBackdrop
+import com.kyant.backdrop.Backdrop
 
 /**
  * 苹果液态玻璃标准底部导航栏：
@@ -39,9 +38,9 @@ fun JiangLiquidNavigationBar(
     recoveryMode: Boolean,
     collapsed: Boolean,
     onExpand: () -> Unit,
+    backdrop: Backdrop,
     modifier: Modifier = Modifier
 ) {
-    val backdrop = LocalBackdrop.current ?: emptyBackdrop()
     val accentColor = if (recoveryMode) RecoveryCoral else Blue
     val palette = LocalVitalityColors.current
 

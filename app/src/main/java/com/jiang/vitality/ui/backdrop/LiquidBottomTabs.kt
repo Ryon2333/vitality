@@ -11,6 +11,9 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -95,58 +98,132 @@ fun LiquidBottomTabs(
                 }
             )
         }
+        // Layer 3 captures the complete navigation surface, including its icons
+        // and labels. The selected lens is then drawn last as layer 4 so those
+        // pixels are genuinely refracted instead of staying sharp above the lens.
+        val navigationContentBackdrop = rememberLayerBackdrop()
+        val indicatorBackdrop = rememberCombinedBackdrop(backdrop, navigationContentBackdrop)
 
-        // 1. 底层：苹果液态玻璃外壳胶囊（动态背景模糊 + 球面透镜 + 45° 晶莹高光描边）
         Box(
             Modifier
-                .drawBackdrop(
-                    backdrop = backdrop,
-                    shape = { androidx.compose.foundation.shape.RoundedCornerShape(50) },
-                    effects = {
-                        vibrancy()
-                        blur(5.dp.toPx())
-                        lens(
-                            refractionHeight = 20.dp.toPx(),
-                            refractionAmount = 28.dp.toPx(),
-                            depthEffect = true,
-                            chromaticAberration = true
-                        )
-                    },
-                    highlight = {
-                        Highlight.Default.copy(
-                            style = HighlightStyle.Default(
-                                color = Color.White.copy(alpha = if (isLightTheme) 0.96f else 0.56f),
-                                angle = 45f,
-                                falloff = 1f
-                            ),
-                            width = 1.25.dp
-                        )
-                    },
-                    shadow = {
-                        Shadow(
-                            radius = 12.dp,
-                            color = Color.Black.copy(alpha = if (isLightTheme) 0.05f else 0.15f)
-                        )
-                    },
-                    innerShadow = {
-                        InnerShadow(
-                            radius = 5.dp,
-                            color = Color.White.copy(alpha = if (isLightTheme) 0.30f else 0.14f)
-                        )
-                    },
-                    layerBlock = {
-                        val progress = pressProgress.value
-                        val scale = lerp(1f, 1f + 16.dp.toPx() / size.width, progress)
-                        scaleX = scale
-                        scaleY = scale
-                    },
-                    onDrawSurface = { drawRect(containerColor) }
-                )
+                .layerBackdrop(navigationContentBackdrop)
                 .fillMaxWidth()
                 .height(64.dp)
-        )
+        ) {
+            // Layer 3a: highly transparent liquid-glass navigation shell.
+            Box(
+                Modifier
+                    .drawBackdrop(
+                        backdrop = backdrop,
+                        shape = { androidx.compose.foundation.shape.RoundedCornerShape(50) },
+                        effects = {
+                            vibrancy()
+                            // Blur only the page behind the navigation shell. Icons,
+                            // labels and the selected lens are rendered afterwards.
+                            blur(3.dp.toPx())
+                            lens(
+                                refractionHeight = 8.dp.toPx(),
+                                refractionAmount = 9.dp.toPx(),
+                                depthEffect = true,
+                                chromaticAberration = false
+                            )
+                        },
+                        highlight = {
+                            Highlight.Default.copy(
+                                style = HighlightStyle.Default(
+                                    color = Color.White.copy(alpha = if (isLightTheme) 0.96f else 0.56f),
+                                    angle = 45f,
+                                    falloff = 1f
+                                ),
+                                width = 1.25.dp
+                            )
+                        },
+                        shadow = {
+                            Shadow(
+                                radius = 12.dp,
+                                color = Color.Black.copy(alpha = if (isLightTheme) 0.05f else 0.15f)
+                            )
+                        },
+                        innerShadow = {
+                            InnerShadow(
+                                radius = 5.dp,
+                                color = Color.White.copy(alpha = if (isLightTheme) 0.30f else 0.14f)
+                            )
+                        },
+                        layerBlock = {
+                            val progress = pressProgress.value
+                            val scale = lerp(1f, 1f + 16.dp.toPx() / size.width, progress)
+                            scaleX = scale
+                            scaleY = scale
+                        },
+                        onDrawSurface = { drawRect(containerColor) }
+                    )
+                    .fillMaxWidth()
+                    .height(64.dp)
+            )
 
-        // 2. 中层：悬浮 7 波段光谱色散液态玻璃药丸透镜（在 Tab 图标下方滑动，折射底图）
+            // Layer 3b: icons and labels are part of the sampled navigation layer.
+            CompositionLocalProvider(
+                LocalLiquidBottomTabScale provides {
+                    lerp(1f, 1.10f, pressProgress.value)
+                }
+            ) {
+                Row(
+                    Modifier
+                        .then(interactiveHighlight.modifier)
+                        .pointerInput(tabsCount, isLtr) {
+                            detectHorizontalDragGestures(
+                                onDragStart = {
+                                    dragging = true
+                                    dragPosition = selectedTabIndex().toFloat()
+                                    animationScope.launch {
+                                        settledPosition.stop()
+                                        pressProgress.animateTo(1f, spring(.7f, 700f, .001f))
+                                    }
+                                },
+                                onHorizontalDrag = { change, dragAmount ->
+                                    change.consume()
+                                    val direction = if (isLtr) 1f else -1f
+                                    dragPosition = (dragPosition + dragAmount / tabWidth * direction)
+                                        .fastCoerceIn(0f, (tabsCount - 1).toFloat())
+                                },
+                                onDragEnd = {
+                                    val releasedPosition = dragPosition
+                                    val target = dragPosition.roundToInt().fastCoerceIn(0, tabsCount - 1)
+                                    onTabSelected(target)
+                                    animationScope.launch {
+                                        // Keep rendering the direct pointer position until Animatable has
+                                        // taken it over. Otherwise the pill flashes back to its old tab for
+                                        // one frame when the finger is released.
+                                        settledPosition.snapTo(releasedPosition)
+                                        dragging = false
+                                        launch { settledPosition.animateTo(target.toFloat(), spring(.72f, 620f, .001f)) }
+                                        launch { pressProgress.animateTo(0f, spring(.82f, 520f, .001f)) }
+                                    }
+                                },
+                                onDragCancel = {
+                                    val releasedPosition = dragPosition
+                                    val target = selectedTabIndex().fastCoerceIn(0, tabsCount - 1)
+                                    animationScope.launch {
+                                        settledPosition.snapTo(releasedPosition)
+                                        dragging = false
+                                        launch { settledPosition.animateTo(target.toFloat(), spring(.82f, 520f, .001f)) }
+                                        launch { pressProgress.animateTo(0f, spring(.82f, 520f, .001f)) }
+                                    }
+                                }
+                            )
+                        }
+                        .height(64.dp)
+                        .fillMaxWidth()
+                        .padding(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    content = content
+                )
+            }
+        }
+
+        // Layer 4: the current-tab lens is painted after layer 3 and therefore
+        // refracts the navigation icon/label as well as the page and wallpaper.
         Box(
             Modifier
                 .padding(horizontal = 4.dp)
@@ -155,15 +232,14 @@ fun LiquidBottomTabs(
                     else size.width - (indicatorPosition() + 1f) * tabWidth
                 }
                 .drawBackdrop(
-                    backdrop = backdrop,
+                    backdrop = indicatorBackdrop,
                     shape = { androidx.compose.foundation.shape.RoundedCornerShape(50) },
                     effects = {
                         val progress = pressProgress.value
                         vibrancy()
-                        blur(3.dp.toPx())
                         lens(
-                            refractionHeight = 14.dp.toPx() + 4.dp.toPx() * progress,
-                            refractionAmount = 22.dp.toPx() + 7.dp.toPx() * progress,
+                            refractionHeight = 6.dp.toPx() + 2.dp.toPx() * progress,
+                            refractionAmount = 7.dp.toPx() + 3.dp.toPx() * progress,
                             depthEffect = true,
                             chromaticAberration = true
                         )
@@ -172,15 +248,14 @@ fun LiquidBottomTabs(
                         val progress = pressProgress.value
                         Highlight.Default.copy(
                             style = HighlightStyle.Default(
-                                color = Color.White.copy(alpha = lerp(0.85f, 1f, progress)),
+                                color = Color.White.copy(alpha = lerp(0.92f, 1f, progress)),
                                 angle = 45f,
                                 falloff = 1.2f
                             ),
-                            width = 1.dp
+                            width = 1.2.dp
                         )
                     },
                     shadow = {
-                        val progress = pressProgress.value
                         Shadow(
                             radius = 6.dp,
                             color = Color.Black.copy(alpha = if (isLightTheme) 0.06f else 0.16f)
@@ -201,9 +276,9 @@ fun LiquidBottomTabs(
                     onDrawSurface = {
                         val progress = pressProgress.value
                         val glassAlpha = if (isLightTheme) {
-                            lerp(0.055f, 0.11f, progress)
+                            lerp(0.025f, 0.06f, progress)
                         } else {
-                            lerp(0.045f, 0.10f, progress)
+                            lerp(0.02f, 0.055f, progress)
                         }
                         drawRect(Color.White.copy(alpha = glassAlpha))
                     }
@@ -211,64 +286,5 @@ fun LiquidBottomTabs(
                 .height(56.dp)
                 .fillMaxWidth(1f / tabsCount)
         )
-
-        // 3. 顶层：清晰锐利的 Tab 标签内容层（文字与图标 100% 矢量清晰，零模糊、零重影）
-        CompositionLocalProvider(
-            LocalLiquidBottomTabScale provides {
-                lerp(1f, 1.10f, pressProgress.value)
-            }
-        ) {
-            Row(
-                Modifier
-                    .then(interactiveHighlight.modifier)
-                    .pointerInput(tabsCount, isLtr) {
-                        detectHorizontalDragGestures(
-                            onDragStart = {
-                                dragging = true
-                                dragPosition = selectedTabIndex().toFloat()
-                                animationScope.launch {
-                                    settledPosition.stop()
-                                    pressProgress.animateTo(1f, spring(.7f, 700f, .001f))
-                                }
-                            },
-                            onHorizontalDrag = { change, dragAmount ->
-                                change.consume()
-                                val direction = if (isLtr) 1f else -1f
-                                dragPosition = (dragPosition + dragAmount / tabWidth * direction)
-                                    .fastCoerceIn(0f, (tabsCount - 1).toFloat())
-                            },
-                            onDragEnd = {
-                                val releasedPosition = dragPosition
-                                val target = dragPosition.roundToInt().fastCoerceIn(0, tabsCount - 1)
-                                onTabSelected(target)
-                                animationScope.launch {
-                                    // Keep rendering the direct pointer position until Animatable has
-                                    // taken it over. Otherwise the pill flashes back to its old tab for
-                                    // one frame when the finger is released.
-                                    settledPosition.snapTo(releasedPosition)
-                                    dragging = false
-                                    launch { settledPosition.animateTo(target.toFloat(), spring(.72f, 620f, .001f)) }
-                                    launch { pressProgress.animateTo(0f, spring(.82f, 520f, .001f)) }
-                                }
-                            },
-                            onDragCancel = {
-                                val releasedPosition = dragPosition
-                                val target = selectedTabIndex().fastCoerceIn(0, tabsCount - 1)
-                                animationScope.launch {
-                                    settledPosition.snapTo(releasedPosition)
-                                    dragging = false
-                                    launch { settledPosition.animateTo(target.toFloat(), spring(.82f, 520f, .001f)) }
-                                    launch { pressProgress.animateTo(0f, spring(.82f, 520f, .001f)) }
-                                }
-                            }
-                        )
-                    }
-                    .height(64.dp)
-                    .fillMaxWidth()
-                    .padding(4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                content = content
-            )
-        }
     }
 }

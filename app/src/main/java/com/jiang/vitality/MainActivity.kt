@@ -105,7 +105,11 @@ class MainActivity : ComponentActivity() {
         var workUnlockStep by remember { mutableIntStateOf(0) }
         var workUnlockPhrase by remember { mutableStateOf("") }
         val hazeState = rememberHazeState()
+        // Two independent capture layers avoid feedback loops:
+        // cards sample the dynamic wallpaper, while navigation samples the fully
+        // composed page (wallpaper + cards) beneath it.
         val wallpaperBackdrop = rememberLayerBackdrop()
+        val pageCompositeBackdrop = rememberLayerBackdrop()
         val bubbleSounds = rememberBubbleSoundPlayer()
         val context = LocalContext.current
         val meditationPlayer = remember { MeditationPlayer(context) }
@@ -145,6 +149,11 @@ class MainActivity : ComponentActivity() {
                 LocalBackdrop provides wallpaperBackdrop
             ) {
                 Box(Modifier.fillMaxSize()) {
+                    Box(
+                        Modifier
+                            .matchParentSize()
+                            .layerBackdrop(pageCompositeBackdrop)
+                    ) {
                     Box(
                         Modifier
                             .matchParentSize()
@@ -368,6 +377,7 @@ class MainActivity : ComponentActivity() {
                         .navigationBarsPadding()
                         .padding(bottom = 92.dp, end = 22.dp)
                 )
+                    }
                 JiangLiquidNavigationBar(
                     selectedIndex = tab,
                     onSelected = {
@@ -377,6 +387,7 @@ class MainActivity : ComponentActivity() {
                     recoveryMode = snapshot.locked,
                     collapsed = navigationCollapsed,
                     onExpand = { navigationCollapsed = false },
+                    backdrop = pageCompositeBackdrop,
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
