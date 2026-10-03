@@ -144,8 +144,8 @@ fun LiquidGlassBackdrop(
     modifier: Modifier = Modifier,
 ) {
     val surface = MaterialTheme.colorScheme.surface
-    val glassTint = if (isDark) surface.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.16f)
-    val fallback = surface.copy(alpha = if (isDark) 0.30f else 0.24f)
+    val glassTint = if (isDark) surface.copy(alpha = 0.06f) else Color.White.copy(alpha = 0.06f)
+    val fallback = surface.copy(alpha = if (isDark) 0.12f else 0.10f)
     val density = LocalDensity.current
     val layoutDirection = LocalLayoutDirection.current
 
@@ -175,7 +175,7 @@ fun LiquidGlassBackdrop(
         modifier = modifier
             .then(refractionModifier)
             .hazeEffect(state = hazeState) {
-                blurRadius = 18.dp
+                blurRadius = 6.dp
                 noiseFactor = if (isDark) 0.06f else 0.015f
                 tints = listOf(HazeTint(glassTint))
                 fallbackTint = HazeTint(fallback)
@@ -278,6 +278,11 @@ fun LiquidGlassSurface(
     modifier: Modifier = Modifier,
     shape: Shape = RoundedCornerShape(26.dp),
     blurRadius: Dp = 22.dp,
+    blurScale: Float = .23f,
+    lightSurfaceAlpha: Float = .05f,
+    darkSurfaceAlpha: Float = .07f,
+    lightInnerHighlightAlpha: Float = .24f,
+    darkInnerHighlightAlpha: Float = .08f,
     elevation: Dp = 10.dp,
     backdropBlur: Boolean = true,
     content: @Composable BoxScope.() -> Unit
@@ -289,9 +294,9 @@ fun LiquidGlassSurface(
     val roundedShape = (shape as? RoundedCornerShape) ?: RoundedCornerShape(26.dp)
 
     val surfaceContainerColor = if (isDark) {
-        Color(0xFF161618).copy(alpha = 0.16f)
+        Color(0xFF161618).copy(alpha = darkSurfaceAlpha)
     } else {
-        Color.White.copy(alpha = 0.18f)
+        Color.White.copy(alpha = lightSurfaceAlpha)
     }
 
     if (backdrop != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -302,7 +307,7 @@ fun LiquidGlassSurface(
                     shape = { shape },
                     effects = {
                         vibrancy()
-                        blur((blurRadius * .72f).toPx())
+                        blur((blurRadius * blurScale).toPx())
                         lens(
                             refractionHeight = 16f.dp.toPx(),
                             refractionAmount = 20f.dp.toPx(),
@@ -328,7 +333,9 @@ fun LiquidGlassSurface(
                     innerShadow = {
                         InnerShadow(
                             radius = 6.dp,
-                            color = Color.White.copy(alpha = if (isDark) 0.08f else 0.24f)
+                            color = Color.White.copy(
+                                alpha = if (isDark) darkInnerHighlightAlpha else lightInnerHighlightAlpha
+                            )
                         )
                     },
                     onDrawSurface = {
@@ -394,6 +401,11 @@ fun GlassCard(
     modifier = modifier,
     shape = shape,
     blurRadius = 22.dp,
+    blurScale = .12f,
+    lightSurfaceAlpha = .018f,
+    darkSurfaceAlpha = .03f,
+    lightInnerHighlightAlpha = .10f,
+    darkInnerHighlightAlpha = .04f,
     elevation = elevation,
     backdropBlur = true,
     content = content
