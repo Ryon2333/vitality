@@ -28,7 +28,9 @@ data class AiConversation(
     val createdAt: Long,
     val title: String,
     val answer: String,
-    val tags: List<String> = emptyList()
+    val tags: List<String> = emptyList(),
+    val category: String = "未分类",
+    val favorite: Boolean = false
 )
 data class Reminder(val id: Int, val title: String, val hour: Int, val minute: Int, val enabled: Boolean = true) {
     val clock: String get() = "%02d:%02d".format(hour, minute)
@@ -199,12 +201,19 @@ class VitalityStore(context: Context) {
                 createdAt = item.optLong("createdAt", item.getLong("id")),
                 title = item.optString("title"),
                 answer = item.optString("answer"),
-                tags = List(tags.length()) { tags.getString(it) }.filter { it.isNotBlank() }
+                tags = List(tags.length()) { tags.getString(it) }.filter { it.isNotBlank() },
+                category = item.optString("category", "未分类").ifBlank { "未分类" },
+                favorite = item.optBoolean("favorite", false)
             )
         }.sortedByDescending { it.createdAt }
     } catch (_: Exception) { emptyList() }
 
-    @Synchronized fun saveAiConversation(title: String, answer: String, tags: List<String>): AiConversation? {
+    @Synchronized fun saveAiConversation(
+        title: String,
+        answer: String,
+        category: String,
+        tags: List<String>
+    ): AiConversation? {
         val cleanTitle = title.trim().take(500)
         val cleanAnswer = answer.trim().take(500_000)
         if (cleanTitle.isBlank() || cleanAnswer.isBlank()) return null
@@ -215,7 +224,8 @@ class VitalityStore(context: Context) {
             title = cleanTitle,
             answer = cleanAnswer,
             tags = tags.map { it.trim().removePrefix("#") }.filter { it.isNotBlank() }
-                .distinct().take(12)
+                .distinct().take(12),
+            category = category.trim().take(40).ifBlank { "未分类" }
         )
         saveAiConversations((aiConversations() + item).sortedByDescending { it.createdAt }.take(2000))
         return item
@@ -223,6 +233,20 @@ class VitalityStore(context: Context) {
 
     @Synchronized fun deleteAiConversation(id: Long): Boolean =
         saveAiConversations(aiConversations().filterNot { it.id == id })
+
+    @Synchronized fun updateAiConversationMetadata(
+        id: Long,
+        category: String,
+        tags: List<String>,
+        favorite: Boolean
+    ): Boolean {
+        val cleanCategory = category.trim().take(40).ifBlank { "未分类" }
+        val cleanTags = tags.map { it.trim().removePrefix("#") }
+            .filter { it.isNotBlank() }.distinct().take(12)
+        return saveAiConversations(aiConversations().map { talk ->
+            if (talk.id == id) talk.copy(category = cleanCategory, tags = cleanTags, favorite = favorite) else talk
+        })
+    }
 
     private fun saveAiConversations(items: List<AiConversation>): Boolean {
         val array = JSONArray()
@@ -232,7 +256,9 @@ class VitalityStore(context: Context) {
                 .put("createdAt", talk.createdAt)
                 .put("title", talk.title)
                 .put("answer", talk.answer)
-                .put("tags", JSONArray(talk.tags)))
+                .put("tags", JSONArray(talk.tags))
+                .put("category", talk.category)
+                .put("favorite", talk.favorite))
         }
         return prefs.edit().putString("ai_talks", array.toString()).commit()
     }
@@ -296,9 +322,10 @@ class VitalityStore(context: Context) {
     }.getOrNull()
 
     @Synchronized fun deleteMusic(name: String) {
-        val target = File(musicDir, name)
+        val target = File(musicDir, name).canonicalFile
         if (target.parentFile == musicDir.canonicalFile) target.delete()
-        File(musicDir, "$name.cover.jpg").delete()
+        val cover = File(musicDir, "$name.cover.jpg").canonicalFile
+        if (cover.parentFile == musicDir.canonicalFile) cover.delete()
         saveMusicNames(musicNames().filter { it != name })
     }
 
@@ -364,7 +391,9 @@ class VitalityStore(context: Context) {
                         .put("createdAt", talk.createdAt)
                         .put("title", talk.title)
                         .put("answer", talk.answer)
-                        .put("tags", JSONArray(talk.tags)))
+                        .put("tags", JSONArray(talk.tags))
+                        .put("category", talk.category)
+                        .put("favorite", talk.favorite))
                 }
             })
             .toString(2)
@@ -431,7 +460,9 @@ class VitalityStore(context: Context) {
                     createdAt = item.optLong("createdAt", System.currentTimeMillis()),
                     title = item.optString("title").take(500),
                     answer = item.optString("answer").take(500_000),
-                    tags = List(tags.length()) { tags.getString(it).take(40) }.filter { it.isNotBlank() }
+                    tags = List(tags.length()) { tags.getString(it).take(40) }.filter { it.isNotBlank() },
+                    category = item.optString("category", "未分类").take(40).ifBlank { "未分类" },
+                    favorite = item.optBoolean("favorite", false)
                 )
             }.filter { it.title.isNotBlank() && it.answer.isNotBlank() }
 
@@ -465,7 +496,9 @@ class VitalityStore(context: Context) {
                         .put("createdAt", talk.createdAt)
                         .put("title", talk.title)
                         .put("answer", talk.answer)
-                        .put("tags", JSONArray(talk.tags)))
+                        .put("tags", JSONArray(talk.tags))
+                        .put("category", talk.category)
+                        .put("favorite", talk.favorite))
                 }
                 editor.putString("ai_talks", array.toString())
             }

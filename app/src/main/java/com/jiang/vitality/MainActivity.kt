@@ -231,10 +231,14 @@ class MainActivity : ComponentActivity() {
                                     refresh()
                                 },
                                 aiTalks = aiTalks,
-                                onSaveAiTalk = { title, answer, tags ->
-                                    store.saveAiConversation(title, answer, tags)?.also {
+                                onSaveAiTalk = { title, answer, category, tags ->
+                                    store.saveAiConversation(title, answer, category, tags)?.also {
                                         aiTalks = store.aiConversations()
                                     }
+                                },
+                                onUpdateAiTalk = { id, category, tags, favorite ->
+                                    store.updateAiConversationMetadata(id, category, tags, favorite)
+                                    aiTalks = store.aiConversations()
                                 },
                                 onDeleteAiTalk = { id ->
                                     store.deleteAiConversation(id)

@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -66,7 +67,8 @@ fun RestScreen(
     rests: List<String>,
     onSave: (List<String>) -> Unit,
     aiTalks: List<AiConversation>,
-    onSaveAiTalk: (String, String, List<String>) -> AiConversation?,
+    onSaveAiTalk: (String, String, String, List<String>) -> AiConversation?,
+    onUpdateAiTalk: (Long, String, List<String>, Boolean) -> Unit,
     onDeleteAiTalk: (Long) -> Unit,
     musicNames: List<String>,
     musicCoverPath: (String) -> String?,
@@ -162,6 +164,7 @@ fun RestScreen(
         )
         SoundTherapyDestination.PLAYER -> SoundTherapyPlayer(
             title = currentMusic,
+            queue = musicNames,
             coverPath = currentMusic?.let(musicCoverPath),
             isPlaying = isPlaying,
             positionMillis = positionMillis,
@@ -186,9 +189,10 @@ fun RestScreen(
             onCollapse = onCollapse
         )
         SoundTherapyDestination.AI_EDITOR -> AiTalkEditor(
+            categories = aiTalks.map { it.category }.distinct().sorted(),
             onBack = { onDestination(SoundTherapyDestination.AI_LIBRARY) },
-            onSave = { title, answer, tags ->
-                onSaveAiTalk(title, answer, tags)?.let { saved ->
+            onSave = { title, answer, category, tags ->
+                onSaveAiTalk(title, answer, category, tags)?.let { saved ->
                     selectedAiTalkId = saved.id
                     onDestination(SoundTherapyDestination.AI_DETAIL)
                 }
@@ -199,7 +203,11 @@ fun RestScreen(
             if (talk != null) {
                 AiTalkDetail(
                     talk = talk,
+                    categories = aiTalks.map { it.category }.distinct().sorted(),
                     onBack = { onDestination(SoundTherapyDestination.AI_LIBRARY) },
+                    onUpdateMetadata = { category, tags, favorite ->
+                        onUpdateAiTalk(talk.id, category, tags, favorite)
+                    },
                     onDelete = {
                         onDeleteAiTalk(talk.id)
                         selectedAiTalkId = null
@@ -382,31 +390,52 @@ private fun MusicLibraryBubble(name: String, coverPath: String?, active: Boolean
 
 @Composable
 private fun SoundTherapyPlayer(
-    title: String?, coverPath: String?, isPlaying: Boolean,
+    title: String?, queue: List<String>, coverPath: String?, isPlaying: Boolean,
     positionMillis: Long, durationMillis: Long, mode: MusicPlaybackMode, error: String?,
     onBack: () -> Unit, onToggle: () -> Unit, onPrevious: () -> Unit, onNext: () -> Unit,
     onSeek: (Long) -> Unit, onMode: (MusicPlaybackMode) -> Unit
 ) {
     val bitmap = remember(coverPath) { coverPath?.let(BitmapFactory::decodeFile)?.asImageBitmap() }
     val accent = Blue
+    var showModes by remember { mutableStateOf(false) }
+    val queueIndex = queue.indexOf(title).takeIf { it >= 0 }
     Column(
         Modifier.fillMaxSize().padding(start = 20.dp, top = 20.dp, end = 20.dp, bottom = 118.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         PageBackHeader("正在播放", title ?: "选择一首音乐", onBack)
-        Spacer(Modifier.weight(.15f))
-        GlassCard(Modifier.size(292.dp), shape = CircleShape, elevation = 18.dp) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                if (bitmap != null) Image(bitmap, "音乐封面", Modifier.fillMaxSize().clip(CircleShape), contentScale = ContentScale.Crop)
-                else Canvas(Modifier.fillMaxSize()) {
-                    drawCircle(Brush.radialGradient(listOf(Color.White.copy(.8f), Color(0xFFBFD7F6), Color(0xFFC9BEEB), accent.copy(.55f))))
-                    drawCircle(Color.White.copy(.65f), radius = size.minDimension * .34f, style = androidx.compose.ui.graphics.drawscope.Stroke(2.dp.toPx()))
+        Spacer(Modifier.weight(.08f))
+        Box(Modifier.size(276.dp)) {
+            GlassCard(Modifier.fillMaxSize(), shape = CircleShape, elevation = 18.dp) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    if (bitmap != null) Image(bitmap, "音乐封面", Modifier.fillMaxSize().clip(CircleShape), contentScale = ContentScale.Crop)
+                    else Canvas(Modifier.fillMaxSize()) {
+                        drawCircle(Brush.radialGradient(listOf(Color.White.copy(.8f), Color(0xFFBFD7F6), Color(0xFFC9BEEB), accent.copy(.55f))))
+                        drawCircle(Color.White.copy(.65f), radius = size.minDimension * .34f, style = androidx.compose.ui.graphics.drawscope.Stroke(2.dp.toPx()))
+                    }
+                    if (bitmap == null) Text("♫", color = Color.White, fontSize = 64.sp, fontWeight = FontWeight.Light)
                 }
-                if (bitmap == null) Text("♫", color = Color.White, fontSize = 64.sp, fontWeight = FontWeight.Light)
+            }
+            GlassCard(
+                Modifier.align(Alignment.BottomEnd).size(72.dp).clickable { showModes = true },
+                shape = CircleShape,
+                elevation = 12.dp
+            ) {
+                Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                    Text(playbackModeIcon(mode), color = Blue, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                    Text("模式", color = Muted, fontSize = 9.sp)
+                }
             }
         }
-        Text(title ?: "尚未播放", color = Ink, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(title?.let(::displayMusicTitle) ?: "尚未播放", color = Ink, fontSize = 21.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                queueIndex?.let { "第 ${it + 1} 首 · 共 ${queue.size} 首" } ?: "从音疗曲库选择音乐",
+                color = Muted,
+                fontSize = 12.sp
+            )
+        }
         val seconds = (durationMillis / 1_000L).coerceAtLeast(1L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         GlassVitalitySlider(
             value = (positionMillis / 1_000L).coerceIn(0, seconds.toLong()).toInt(),
@@ -419,19 +448,70 @@ private fun SoundTherapyPlayer(
             Text(formatTime(positionMillis), color = Muted, fontSize = 12.sp)
             Text("-${formatTime((durationMillis - positionMillis).coerceAtLeast(0L))}", color = Muted, fontSize = 12.sp)
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            GlassActionButton("上一首", onPrevious, Modifier.weight(1f))
-            GlassActionButton(if (isPlaying) "暂停" else "播放", onToggle, Modifier.weight(1f), enabled = title != null)
-            GlassActionButton("下一首", onNext, Modifier.weight(1f))
-        }
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            MusicPlaybackMode.entries.forEach { item ->
-                GlassActionButton(if (item == mode) "● ${item.title}" else item.title, { onMode(item) })
-            }
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            PlayerControlButton("◀│", "上一首", 64.dp, title != null, onPrevious)
+            PlayerControlButton(if (isPlaying) "Ⅱ" else "▶", if (isPlaying) "暂停" else "播放", 86.dp, title != null, onToggle)
+            PlayerControlButton("│▶", "下一首", 64.dp, title != null, onNext)
         }
         if (!error.isNullOrBlank()) Text(error, color = RecoveryCoral, fontSize = 12.sp, textAlign = TextAlign.Center)
         Spacer(Modifier.weight(.1f))
     }
+    if (showModes) {
+        GlassDialog(
+            onDismissRequest = { showModes = false },
+            title = { Text("选择播放方式") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    MusicPlaybackMode.entries.forEach { item ->
+                        GlassOutlinedButton(
+                            onClick = { onMode(item); showModes = false },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                if (item == mode) "●  ${playbackModeIcon(item)}  ${item.title}" else "${playbackModeIcon(item)}  ${item.title}",
+                                color = if (item == mode) Blue else Ink
+                            )
+                        }
+                    }
+                }
+            },
+            actions = { GlassActionButton("取消", { showModes = false }) }
+        )
+    }
+}
+
+@Composable
+private fun PlayerControlButton(
+    symbol: String,
+    label: String,
+    size: androidx.compose.ui.unit.Dp,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        GlassCard(
+            Modifier.size(size).clickable(enabled = enabled, onClick = onClick),
+            shape = CircleShape,
+            elevation = if (size > 70.dp) 14.dp else 8.dp
+        ) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(symbol, color = if (enabled) Ink else Muted.copy(alpha = .45f), fontSize = if (size > 70.dp) 31.sp else 27.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+        Text(label, color = if (enabled) Muted else Muted.copy(alpha = .4f), fontSize = 10.sp)
+    }
+}
+
+private fun playbackModeIcon(mode: MusicPlaybackMode): String = when (mode) {
+    MusicPlaybackMode.PLAY_ONCE -> "1×"
+    MusicPlaybackMode.CONTINUOUS -> "→"
+    MusicPlaybackMode.REPEAT_ALL -> "↻"
+    MusicPlaybackMode.REPEAT_ONE -> "↻1"
+    MusicPlaybackMode.SHUFFLE -> "⇄"
 }
 
 @Composable

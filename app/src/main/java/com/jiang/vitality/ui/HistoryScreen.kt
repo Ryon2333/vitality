@@ -46,6 +46,7 @@ fun HistoryScreen(
     }
     var selectedDate by remember(allDays.keys) { mutableStateOf<LocalDate?>(null) }
     var viewingPath by remember { mutableStateOf<String?>(null) }
+    var pendingPhotoDelete by remember { mutableStateOf<Pair<Long, String>?>(null) }
     val visibleDays = selectedDate?.let { date -> allDays.filterKeys { it == date } } ?: allDays
     val listState = rememberAutoCollapseLazyListState(onCollapse)
 
@@ -78,12 +79,27 @@ fun HistoryScreen(
                 date = date,
                 entries = entries,
                 onViewPhoto = { viewingPath = it },
-                onDeletePhoto = onDeletePhoto
+                onDeletePhoto = { readingTime, path -> pendingPhotoDelete = readingTime to path }
             )
         }
     }
 
     viewingPath?.let { path -> PhotoViewer(path) { viewingPath = null } }
+    pendingPhotoDelete?.let { (readingTime, path) ->
+        GlassDialog(
+            onDismissRequest = { pendingPhotoDelete = null },
+            title = { Text("删除这张照片？") },
+            text = { Text("照片会从这条记录中永久移除，状态和心得仍会保留。") },
+            actions = {
+                GlassActionButton("取消", { pendingPhotoDelete = null })
+                GlassActionButton("确认删除", {
+                    onDeletePhoto(readingTime, path)
+                    if (viewingPath == path) viewingPath = null
+                    pendingPhotoDelete = null
+                })
+            }
+        )
+    }
 }
 
 @Composable
