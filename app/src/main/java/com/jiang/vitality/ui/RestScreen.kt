@@ -70,6 +70,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.jiang.vitality.data.AiConversation
+import com.jiang.vitality.data.FossilDiscovery
 import com.jiang.vitality.data.MediaReview
 import com.jiang.vitality.data.MediaReviewDraft
 import java.io.File
@@ -80,7 +81,7 @@ import kotlin.random.Random
 
 enum class SoundTherapyDestination {
     REST, LIBRARY, PLAYER, AI_LIBRARY, AI_EDITOR, AI_DETAIL,
-    REVIEW_LIBRARY, REVIEW_EDITOR, REVIEW_DETAIL
+    REVIEW_LIBRARY, REVIEW_EDITOR, REVIEW_DETAIL, EXPLORE
 }
 
 @Composable
@@ -94,6 +95,8 @@ fun RestScreen(
     reviews: List<MediaReview>,
     onSaveReview: (MediaReviewDraft) -> MediaReview?,
     onDeleteReview: (Long) -> Unit,
+    discoveries: List<FossilDiscovery>,
+    onDig: () -> FossilDiscovery?,
     createPhotoFile: () -> File,
     finalizePhoto: (String) -> String?,
     importPhoto: (Uri) -> String?,
@@ -180,6 +183,7 @@ fun RestScreen(
             onOpenSoundTherapy = { onDestination(SoundTherapyDestination.LIBRARY) },
             onOpenAiTalk = { onDestination(SoundTherapyDestination.AI_LIBRARY) },
             onOpenReviews = { onDestination(SoundTherapyDestination.REVIEW_LIBRARY) },
+            onOpenExplore = { onDestination(SoundTherapyDestination.EXPLORE) },
             onCollapse = onCollapse
         )
         SoundTherapyDestination.LIBRARY -> SoundTherapyLibrary(
@@ -299,6 +303,12 @@ fun RestScreen(
                 )
             }
         }
+        SoundTherapyDestination.EXPLORE -> ExplorationScreen(
+            discoveries = discoveries,
+            onDig = onDig,
+            onBack = { onDestination(SoundTherapyDestination.REST) },
+            onCollapse = onCollapse
+        )
     }
     }
 }
@@ -310,6 +320,7 @@ private fun RestOptionsPage(
     onOpenSoundTherapy: () -> Unit,
     onOpenAiTalk: () -> Unit,
     onOpenReviews: () -> Unit,
+    onOpenExplore: () -> Unit,
     onCollapse: () -> Unit
 ) {
     var editingRest by remember { mutableStateOf<String?>(null) }
@@ -339,7 +350,7 @@ private fun RestOptionsPage(
         }
         Spacer(Modifier.height(14.dp))
         Text("恢复空间", color = Ink, fontWeight = FontWeight.Bold, fontSize = 17.sp, modifier = Modifier.fillMaxWidth())
-        FloatingRestModules(onOpenSoundTherapy, onOpenAiTalk, onOpenReviews)
+        FloatingRestModules(onOpenSoundTherapy, onOpenAiTalk, onOpenReviews, onOpenExplore)
         Spacer(Modifier.height(140.dp))
     }
 
@@ -359,11 +370,16 @@ private fun RestOptionsPage(
 }
 
 @Composable
-private fun FloatingRestModules(onSound: () -> Unit, onAi: () -> Unit, onReview: () -> Unit) {
-    val modules = remember(onSound, onAi, onReview) {
-        listOf(Triple("♫", "音疗", onSound), Triple("ai", "ai谈", onAi), Triple("评", "我评", onReview))
+private fun FloatingRestModules(onSound: () -> Unit, onAi: () -> Unit, onReview: () -> Unit, onExplore: () -> Unit) {
+    val modules = remember(onSound, onAi, onReview, onExplore) {
+        listOf(
+            Triple("♫", "音疗", onSound),
+            Triple("ai", "ai谈", onAi),
+            Triple("评", "我评", onReview),
+            Triple("⌁", "探索", onExplore)
+        )
     }
-    BoxWithConstraints(Modifier.fillMaxWidth().height(150.dp)) {
+    BoxWithConstraints(Modifier.fillMaxWidth().height(250.dp)) {
         val density = androidx.compose.ui.platform.LocalDensity.current
         val bubblePx = with(density) { 102.dp.toPx() }
         val fieldWidth = constraints.maxWidth.toFloat()
@@ -381,8 +397,10 @@ private fun FloatingRestModules(onSound: () -> Unit, onAi: () -> Unit, onReview:
                     }
                 }
             }
-            val baseX = fieldWidth * (.17f + index * .33f) - bubblePx / 2f
-            val baseY = fieldHeight * (.50f + if (index == 1) .08f else -.03f) - bubblePx / 2f
+            val column = index % 2
+            val row = index / 2
+            val baseX = fieldWidth * (.25f + column * .50f) - bubblePx / 2f
+            val baseY = fieldHeight * (.28f + row * .48f) - bubblePx / 2f
             RestModuleBubble(
                 symbol,
                 label,
@@ -692,7 +710,7 @@ private fun playbackModeIcon(mode: MusicPlaybackMode): String = when (mode) {
 }
 
 @Composable
-private fun PageBackHeader(title: String, subtitle: String, onBack: () -> Unit) {
+fun PageBackHeader(title: String, subtitle: String, onBack: () -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         GlassCard(Modifier.size(48.dp).clickable(onClick = onBack), shape = CircleShape) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("‹", color = Ink, fontSize = 32.sp) }

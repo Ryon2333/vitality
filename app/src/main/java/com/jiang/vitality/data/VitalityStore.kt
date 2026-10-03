@@ -354,6 +354,36 @@ class VitalityStore(context: Context) {
         prefs.edit().putString("rests",arr.toString()).commit()
     }
 
+    fun paleontologyDiscoveries(): List<FossilDiscovery> = try {
+        val array = JSONArray(prefs.getString("paleo_discoveries", "[]"))
+        List(array.length()) { index ->
+            val item = array.getJSONObject(index)
+            FossilDiscovery(item.getString("creatureId"), item.getLong("discoveredAt"))
+        }.filter { it.creatureId in PaleontologyCatalog.byId }
+            .sortedByDescending { it.discoveredAt }
+    } catch (_: Exception) { emptyList() }
+
+    fun todayPaleontologyDiscovery(now: Long = System.currentTimeMillis()): FossilDiscovery? {
+        val today = Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault()).toLocalDate()
+        return paleontologyDiscoveries().firstOrNull {
+            Instant.ofEpochMilli(it.discoveredAt).atZone(ZoneId.systemDefault()).toLocalDate() == today
+        }
+    }
+
+    @Synchronized fun discoverPaleontology(now: Long = System.currentTimeMillis()): FossilDiscovery? {
+        todayPaleontologyDiscovery(now)?.let { return null }
+        val existing = paleontologyDiscoveries()
+        val discoveredIds = existing.mapTo(mutableSetOf()) { it.creatureId }
+        val available = PaleontologyCatalog.all.filterNot { it.id in discoveredIds }
+        val creature = (available.ifEmpty { PaleontologyCatalog.all }).random()
+        val discovery = FossilDiscovery(creature.id, now)
+        val array = JSONArray()
+        (existing + discovery).sortedBy { it.discoveredAt }.takeLast(5_000).forEach {
+            array.put(JSONObject().put("creatureId", it.creatureId).put("discoveredAt", it.discoveredAt))
+        }
+        return discovery.takeIf { prefs.edit().putString("paleo_discoveries", array.toString()).commit() }
+    }
+
     fun aiConversations(): List<AiConversation> = try {
         val array = JSONArray(prefs.getString("ai_talks", "[]"))
         List(array.length()) { index ->
@@ -661,6 +691,13 @@ class VitalityStore(context: Context) {
                         .put("quotePhotoData", encodedPhotos(review.quotePhotoPaths)))
                 }
             })
+            .put("exploration", JSONArray().apply {
+                paleontologyDiscoveries().forEach { discovery ->
+                    put(JSONObject()
+                        .put("creatureId", discovery.creatureId)
+                        .put("discoveredAt", discovery.discoveredAt))
+                }
+            })
             .toString(2)
     }
 
@@ -769,6 +806,16 @@ class VitalityStore(context: Context) {
                     favorite = item.optBoolean("favorite", false)
                 )
             }.filter { it.title.isNotBlank() && it.thoughts.isNotBlank() }
+            val inputExploration = root.optJSONArray("exploration") ?: JSONArray()
+            val importedExploration = List(inputExploration.length()) { index ->
+                val item = inputExploration.getJSONObject(index)
+                FossilDiscovery(
+                    creatureId = item.optString("creatureId"),
+                    discoveredAt = item.optLong("discoveredAt", 0L)
+                )
+            }.filter { it.creatureId in PaleontologyCatalog.byId && it.discoveredAt > 0L }
+                .distinctBy { it.discoveredAt }
+                .takeLast(5_000)
 
             val editor = prefs.edit()
                 .putInt("baseline", root.optInt("baseline", 100).coerceIn(0, 100))
@@ -810,6 +857,13 @@ class VitalityStore(context: Context) {
                 val array = JSONArray()
                 importedReviews.forEach { array.put(reviewJson(it, includePaths = true)) }
                 editor.putString("media_reviews", array.toString())
+            }
+            if (root.has("exploration")) {
+                val array = JSONArray()
+                importedExploration.forEach {
+                    array.put(JSONObject().put("creatureId", it.creatureId).put("discoveredAt", it.discoveredAt))
+                }
+                editor.putString("paleo_discoveries", array.toString())
             }
 
             val recoveryEnd = root.optLong("recoveryEnd", 0L)

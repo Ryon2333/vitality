@@ -116,6 +116,7 @@ class MainActivity : ComponentActivity() {
         var musicNames by remember { mutableStateOf(store.musicNames()) }
         var aiTalks by remember { mutableStateOf(store.aiConversations()) }
         var reviews by remember { mutableStateOf(store.mediaReviews()) }
+        var discoveries by remember { mutableStateOf(store.paleontologyDiscoveries()) }
         var demoActive by remember { mutableStateOf(store.demoActive()) }
         var recoveryPhotoPath by remember { mutableStateOf<String?>(null) }
         val recoveryCameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { saved ->
@@ -288,6 +289,12 @@ class MainActivity : ComponentActivity() {
                                     store.deleteMediaReview(id)
                                     reviews = store.mediaReviews()
                                 },
+                                discoveries = discoveries,
+                                onDig = {
+                                    store.discoverPaleontology()?.also {
+                                        discoveries = store.paleontologyDiscoveries()
+                                    }
+                                },
                                 createPhotoFile = store::createPhotoFile,
                                 finalizePhoto = store::finalizePhoto,
                                 importPhoto = store::importPhoto,
@@ -336,6 +343,7 @@ class MainActivity : ComponentActivity() {
                                         val summary = store.importData(raw)
                                         aiTalks = store.aiConversations()
                                         reviews = store.mediaReviews()
+                                        discoveries = store.paleontologyDiscoveries()
                                         refresh()
                                         AlarmScheduler.scheduleAll(this@MainActivity)
                                         "已导入 ${summary.readings} 条记录和 ${summary.photos} 张照片"
