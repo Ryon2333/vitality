@@ -38,6 +38,7 @@ fun <T> ExpandableGlassStack(
     items: List<T>,
     key: (T) -> Any,
     onLongPress: (T) -> Unit,
+    onItemClick: ((T) -> Unit)? = null,
     onAdd: (() -> Unit)? = null,
     onDelete: ((T) -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -111,7 +112,15 @@ fun <T> ExpandableGlassStack(
                                 if (revealed) {
                                     revealed = false
                                     dragX = 0f
-                                } else expanded = !expanded
+                                } else if (expanded && onItemClick != null) {
+                                    onItemClick(item)
+                                } else if (!expanded && items.size == 1 && onItemClick != null) {
+                                    // A one-card deck has no visible expanded state. Open it directly
+                                    // so the first tap never appears to do nothing.
+                                    onItemClick(item)
+                                } else {
+                                    expanded = !expanded
+                                }
                             },
                             onLongPress = { onLongPress(item) }
                         )

@@ -140,9 +140,10 @@ fun AiTalkLibrary(
                     items = entries,
                     key = { it.id },
                     onLongPress = onOpen,
+                    onItemClick = onOpen,
                     cardHeight = 142.dp
                 ) { talk ->
-                    AiTalkPreview(talk, onOpen)
+                    AiTalkPreview(talk)
                 }
             }
         }
@@ -176,9 +177,9 @@ private fun FilterRail(
 }
 
 @Composable
-private fun AiTalkPreview(talk: AiConversation, onOpen: (AiConversation) -> Unit) {
+private fun AiTalkPreview(talk: AiConversation) {
     Column(
-        Modifier.fillMaxSize().clickable { onOpen(talk) },
+        Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.Center
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {

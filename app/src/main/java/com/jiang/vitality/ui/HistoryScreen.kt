@@ -45,8 +45,20 @@ fun HistoryScreen(
         }
     }
     var selectedDate by remember(allDays.keys) { mutableStateOf<LocalDate?>(null) }
+    var showingCollection by remember { mutableStateOf(false) }
     var viewingPath by remember { mutableStateOf<String?>(null) }
     var pendingPhotoDelete by remember { mutableStateOf<Pair<Long, String>?>(null) }
+    if (showingCollection) {
+        MemoryConstellationScreen(
+            readings = state.readings,
+            onBack = { showingCollection = false },
+            onOpenDate = { date ->
+                selectedDate = date
+                showingCollection = false
+            }
+        )
+        return
+    }
     val visibleDays = selectedDate?.let { date -> allDays.filterKeys { it == date } } ?: allDays
     val listState = rememberAutoCollapseLazyListState(onCollapse)
 
@@ -58,6 +70,15 @@ fun HistoryScreen(
     ) {
         item {
             GlassPageHeader("日记", Modifier.fillMaxWidth(), "按天翻阅状态、感受和随手拍。")
+        }
+        item {
+            GlassOutlinedButton(
+                onClick = { showingCollection = true },
+                modifier = Modifier.fillMaxWidth(),
+                height = 56.dp
+            ) {
+                Text("✦  我的集合", color = Blue, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            }
         }
         item {
             GlassCard(Modifier.fillMaxWidth()) {
